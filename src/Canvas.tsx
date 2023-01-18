@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useMemo, useState } from 'react'
-import { deserialize, Document } from 'bson'
 import { mat4 } from 'gl-matrix'
-import { decode } from 'fast-png'
+import { decode as decodePng } from 'fast-png'
+import { decode as decodeMsgPack } from "@msgpack/msgpack"
 
 const BASE_URL = "http://localhost:37371"
 
@@ -14,7 +14,7 @@ interface ImageResponse {
   metadata: { name: string, width: number, height: number, x: number, y: number }[],
   width: number,
   height: number,
-  data: { buffer: Uint8Array },
+  data: Uint8Array,
 }
 
 // Vertex shader program
@@ -139,7 +139,7 @@ const Canvas = ({width, height}: Props) => {
   }, [gl])
 
   const [response, setResponse] = useState<ImageResponse | null>(null)
-  const [texturePlacement, setTexturePlacement] = useState<{ idx: number, tlbr: [number, number, number, number] }[]>([
+  const [texturePlacement, setTexturePlacement] = useState<{ idx: number, tlbr: number[] }[]>([
     { idx: 0, tlbr: [80, 0, 0, 100] },
     { idx: 1, tlbr: [180, 0, 100, 100] },
     { idx: 2, tlbr: [280, 0, 200, 100] },
@@ -149,45 +149,90 @@ const Canvas = ({width, height}: Props) => {
     { idx: 6, tlbr: [680, 0, 600, 100] },
   ])
 
+  useEffect(() => {
+    if (response == null)
+      return
+
+    const placement = Array.from(Array(response.metadata.length), (_, i) => {
+      return {
+        idx: i,
+        tlbr: [100 * i + 80, 0, 100 * i, 100]
+      }
+    })
+    setTexturePlacement(placement)
+  }, [response])
+
+  const [viewport, setViewport] = useState({
+    translate: [0, 0],
+    zoom: 0
+  })
+
+  const onKeyDown = (ev: KeyboardEvent) => {
+    const vp = viewport
+
+    // movement
+    if (ev.key == "w") {
+      vp.translate[1] -= 10
+    }
+    if (ev.key == "s") {
+      vp.translate[1] += 10
+    }
+    if (ev.key == "a") {
+      vp.translate[0] += 10
+    }
+    if (ev.key == "d") {
+      vp.translate[0] -= 10
+    }
+
+    // zoom
+    if (ev.key == "e") {
+      vp.zoom += 1
+    }
+    if (ev.key == "q") {
+      vp.zoom -= 1
+    }
+
+    setViewport(vp)
+    drawScene()
+  }
+
+  useEffect(() => {
+    if (ref.current == null)
+      return
+
+    window.removeEventListener("keydown", onKeyDown)
+    window.addEventListener("keydown", onKeyDown)
+  }, [onKeyDown])
+
+  useEffect(drawScene, [viewport, width, height])
+
   // after gl init, start fetching images
   useEffect(() => {
     if (gl == null)
       return
     
     // start fetching images
-    fetch(`${BASE_URL}/images/data?width=${width}&height=${height}`)
+    fetch(`${BASE_URL}/images/data?width=999&height=999&limit=10`)
       .then((fo) => fo.arrayBuffer())
-      .then((buf) => deserialize(buf))
-      .then((doc: Document) => setResponse(doc as ImageResponse))
+      .then((buf) => decodeMsgPack(buf))
+      .then((doc) => setResponse(doc as ImageResponse))
       .catch(console.error)
   }, [gl])
-
-  // resize
-  useEffect(() => {
-    if (gl == null)
-      return
-
-    gl.viewport(0, 0, width, height)
-    gl.clearColor(0, 0, 0, 1)
-    gl.clear(gl.COLOR_BUFFER_BIT)
-
-    drawScene()
-  }, [width, height, gl])
 
   // after fetch, create texture
   useEffect(() => {
     if (gl == null || glData == null || response == null)
       return
 
-    // decode png image into buffer
-    const png = decode(response.data.buffer)
+    // decode image into buffer
+    const image = decodePng(response.data); // return as Uint8Array
 
     // Flip image pixels into the bottom-to-top order that WebGL expects.
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
 
     // fill texture with data and configure it
     gl.bindTexture(gl.TEXTURE_2D, glData.texture);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, response.width, response.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, png.data);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, response.width, response.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, image.data);
     // gl.generateMipmap(gl.TEXTURE_2D);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
@@ -200,26 +245,45 @@ const Canvas = ({width, height}: Props) => {
       return
 
     // update coordinates
-    const textureCoordBuf: number[] = []
-    const positionBuf: number[] = []
+    const textureCoordBuf: number[] = [
+      1, 1,
+      0, 1,
+      1, 0,
+      0, 0
+    ]
+    const p = [800, 0, 700, 600]
+    const positionBuf: number[] = [
+      p[3], p[0],
+      p[1], p[0],
+      p[3], p[2],
+      p[1], p[2]
+    ]
     const indexBuf: number[] = []
     var i = 0
     for (const tp of texturePlacement) {
       const metadata = response.metadata[tp.idx]
 
       // append texture coordinates
+
+      const m = {
+        y: response.height - metadata.y,
+        x: metadata.x,
+        w: metadata.width,
+        h: metadata.height
+      }
       const c = [
-        metadata.x / response.width, // L
-        metadata.y / response.height, // B
-        (metadata.x + metadata.width) / response.width, // R
-        (metadata.y + metadata.height) / response.height, // T
+        m.x / response.width, // L
+        m.y / response.height, // T
+        (m.x + m.w) / response.width, // R
+        (m.y - m.h) / response.height, // B
       ]
       const coords = [
-        c[2], c[3], // TR
-        c[0], c[3], // TL
-        c[2], c[1], // BR
-        c[0], c[1], // BL
+        c[2], c[1], // TR
+        c[0], c[1], // TL
+        c[2], c[3], // BR
+        c[0], c[3], // BL
       ]
+      console.log(metadata, coords)
       textureCoordBuf.push(...coords)
 
       // append position coordinates
@@ -244,7 +308,7 @@ const Canvas = ({width, height}: Props) => {
       indexBuf.push(...indices)
       i += 4
     }
-    
+
     // upload texture coordinates
     gl.bindBuffer(gl.ARRAY_BUFFER, glData.textureCoordBuffer)
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(textureCoordBuf), gl.STATIC_DRAW)
@@ -263,6 +327,10 @@ const Canvas = ({width, height}: Props) => {
   function drawScene() {
     if (gl == null || glData == null || response == null)
       return
+
+    console.log("draw")
+
+    gl.viewport(0, 0, width, height)
     
     gl.clearColor(0.0, 0.0, 0.0, 1.0); // Clear to black, fully opaque
     gl.clearDepth(1.0); // Clear everything
@@ -280,10 +348,16 @@ const Canvas = ({width, height}: Props) => {
     // Set the drawing position to the "identity" point, which is
     // the center of the scene.
     const modelViewMatrix = mat4.create();
+    const z = Math.pow(1.1, viewport.zoom)
+    mat4.scale(
+      modelViewMatrix,
+      modelViewMatrix,
+      new Float32Array([z, z, 1])
+    )
     mat4.translate(
       modelViewMatrix,
       modelViewMatrix,
-      [100.0, 100.0, -10]
+      [viewport.translate[0], viewport.translate[1], -10]
     );
 
     {
