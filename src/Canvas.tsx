@@ -64,6 +64,8 @@ function loadShader(gl: WebGLRenderingContext, type: number, source: string) {
   return shader;
 }
 
+const ZOOM_BASE = 1.005
+
 const Canvas = ({width, height}: Props) => {
   const ref = useRef<HTMLCanvasElement>(null)
 
@@ -172,16 +174,16 @@ const Canvas = ({width, height}: Props) => {
 
     // movement
     if (ev.key == "w") {
-      vp.translate[1] -= 10
+      vp.translate[1] -= 10 / Math.pow(ZOOM_BASE, vp.zoom)
     }
     if (ev.key == "s") {
-      vp.translate[1] += 10
+      vp.translate[1] += 10 / Math.pow(ZOOM_BASE, vp.zoom)
     }
     if (ev.key == "a") {
-      vp.translate[0] += 10
+      vp.translate[0] += 10 / Math.pow(ZOOM_BASE, vp.zoom)
     }
     if (ev.key == "d") {
-      vp.translate[0] -= 10
+      vp.translate[0] -= 10 / Math.pow(ZOOM_BASE, vp.zoom)
     }
 
     // zoom
@@ -328,8 +330,6 @@ const Canvas = ({width, height}: Props) => {
     if (gl == null || glData == null || response == null)
       return
 
-    console.log("draw")
-
     gl.viewport(0, 0, width, height)
     
     gl.clearColor(0.0, 0.0, 0.0, 1.0); // Clear to black, fully opaque
@@ -343,22 +343,24 @@ const Canvas = ({width, height}: Props) => {
     const zNear = 0.1;
     const zFar = 100.0;
     const projectionMatrix = mat4.create();
-    mat4.ortho(projectionMatrix, 0, width, 0, height, zNear, zFar)
+
+    const z = Math.pow(ZOOM_BASE, viewport.zoom)
+    
+    mat4.ortho(projectionMatrix, -width / 2, width / 2, -height / 2, height / 2, zNear, zFar)
+    mat4.scale(
+      projectionMatrix,
+      projectionMatrix,
+      [z, z, 1]
+    )
+    mat4.translate(
+      projectionMatrix,
+      projectionMatrix,
+      [viewport.translate[0], viewport.translate[1], -10]
+    )
 
     // Set the drawing position to the "identity" point, which is
     // the center of the scene.
     const modelViewMatrix = mat4.create();
-    const z = Math.pow(1.1, viewport.zoom)
-    mat4.scale(
-      modelViewMatrix,
-      modelViewMatrix,
-      new Float32Array([z, z, 1])
-    )
-    mat4.translate(
-      modelViewMatrix,
-      modelViewMatrix,
-      [viewport.translate[0], viewport.translate[1], -10]
-    );
 
     {
       // Tell WebGL how to pull out the positions from the position
