@@ -2,6 +2,7 @@ import React, { useRef, useEffect, useMemo, useState } from 'react'
 import { mat4 } from 'gl-matrix'
 import { decode as decodePng } from 'fast-png'
 import { decode as decodeMsgPack } from "@msgpack/msgpack"
+import { Clock } from "./util"
 
 const BASE_URL = "http://localhost:37371"
 
@@ -65,6 +66,8 @@ function loadShader(gl: WebGLRenderingContext, type: number, source: string) {
 }
 
 const ZOOM_BASE = 1.005
+
+const LOAD_CLOCK = new Clock()
 
 const Canvas = ({width, height}: Props) => {
   const ref = useRef<HTMLCanvasElement>(null)
@@ -141,24 +144,29 @@ const Canvas = ({width, height}: Props) => {
   }, [gl])
 
   const [response, setResponse] = useState<ImageResponse | null>(null)
-  const [texturePlacement, setTexturePlacement] = useState<{ idx: number, tlbr: number[] }[]>([
-    { idx: 0, tlbr: [80, 0, 0, 100] },
-    { idx: 1, tlbr: [180, 0, 100, 100] },
-    { idx: 2, tlbr: [280, 0, 200, 100] },
-    { idx: 3, tlbr: [380, 0, 300, 100] },
-    { idx: 4, tlbr: [480, 0, 400, 100] },
-    { idx: 5, tlbr: [580, 0, 500, 100] },
-    { idx: 6, tlbr: [680, 0, 600, 100] },
-  ])
+  const [texturePlacement, setTexturePlacement] = useState<{ idx: number, tlbr: number[] }[]>([])
 
   useEffect(() => {
     if (response == null)
       return
 
+    const a = Math.trunc(Math.sqrt(response.metadata.length))
     const placement = Array.from(Array(response.metadata.length), (_, i) => {
+      const _i = i % a
+      const _j = Math.trunc(i / a)
+      const wh = response.metadata[i].width / response.metadata[i].height
+
+      let width = 100
+      let height = 100
+      if (wh > 1) {
+        height /= wh
+      } else {
+        width *= wh
+      }
+      
       return {
         idx: i,
-        tlbr: [100 * i + 80, 0, 100 * i, 100]
+        tlbr: [110 * _i + height, 110 * _j, 110 * _i, 110 * _j + width]
       }
     })
     setTexturePlacement(placement)
@@ -212,12 +220,15 @@ const Canvas = ({width, height}: Props) => {
   useEffect(() => {
     if (gl == null)
       return
-    
+
+    LOAD_CLOCK.start()
+
     // start fetching images
-    fetch(`${BASE_URL}/images/data?width=999&height=999&limit=10`)
+    fetch(`${BASE_URL}/images/data?width=200&height=200`)
       .then((fo) => fo.arrayBuffer())
       .then((buf) => decodeMsgPack(buf))
       .then((doc) => setResponse(doc as ImageResponse))
+      .then(() => LOAD_CLOCK.print_time("server response"))
       .catch(console.error)
   }, [gl])
 
@@ -226,8 +237,14 @@ const Canvas = ({width, height}: Props) => {
     if (gl == null || glData == null || response == null)
       return
 
+    LOAD_CLOCK.start()
+
     // decode image into buffer
     const image = decodePng(response.data); // return as Uint8Array
+
+    LOAD_CLOCK.print_time("texture decode")
+
+    LOAD_CLOCK.start()
 
     // Flip image pixels into the bottom-to-top order that WebGL expects.
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
@@ -239,6 +256,9 @@ const Canvas = ({width, height}: Props) => {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+
+    LOAD_CLOCK.print_time("texture upload")
+    
   }, [gl, glData, response])
 
   // after fetch, on update, create buffer data
@@ -246,27 +266,17 @@ const Canvas = ({width, height}: Props) => {
     if (gl == null || glData == null || response == null)
       return
 
+    LOAD_CLOCK.start()
+
     // update coordinates
-    const textureCoordBuf: number[] = [
-      1, 1,
-      0, 1,
-      1, 0,
-      0, 0
-    ]
-    const p = [800, 0, 700, 600]
-    const positionBuf: number[] = [
-      p[3], p[0],
-      p[1], p[0],
-      p[3], p[2],
-      p[1], p[2]
-    ]
+    const textureCoordBuf: number[] = []
+    const positionBuf: number[] = []
     const indexBuf: number[] = []
     var i = 0
     for (const tp of texturePlacement) {
       const metadata = response.metadata[tp.idx]
 
       // append texture coordinates
-
       const m = {
         y: response.height - metadata.y,
         x: metadata.x,
@@ -285,7 +295,6 @@ const Canvas = ({width, height}: Props) => {
         c[2], c[3], // BR
         c[0], c[3], // BL
       ]
-      console.log(metadata, coords)
       textureCoordBuf.push(...coords)
 
       // append position coordinates
@@ -311,6 +320,10 @@ const Canvas = ({width, height}: Props) => {
       i += 4
     }
 
+    LOAD_CLOCK.print_time("buffer gen")
+
+    LOAD_CLOCK.start()
+
     // upload texture coordinates
     gl.bindBuffer(gl.ARRAY_BUFFER, glData.textureCoordBuffer)
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(textureCoordBuf), gl.STATIC_DRAW)
@@ -323,12 +336,16 @@ const Canvas = ({width, height}: Props) => {
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, glData.indexBuffer)
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indexBuf), gl.STATIC_DRAW)
 
+    LOAD_CLOCK.print_time("buffer upload")
+
     drawScene()
   }, [gl, glData, texturePlacement, response])
 
   function drawScene() {
     if (gl == null || glData == null || response == null)
       return
+
+    LOAD_CLOCK.start()
 
     gl.viewport(0, 0, width, height)
     
@@ -361,6 +378,10 @@ const Canvas = ({width, height}: Props) => {
     // Set the drawing position to the "identity" point, which is
     // the center of the scene.
     const modelViewMatrix = mat4.create();
+
+    LOAD_CLOCK.print_time("matrix calculation")
+
+    LOAD_CLOCK.start()
 
     {
       // Tell WebGL how to pull out the positions from the position
@@ -431,12 +452,18 @@ const Canvas = ({width, height}: Props) => {
       gl.uniform1i(glData.programData.uniformLocations.uSampler, 0);
     }
 
+    LOAD_CLOCK.print_time("data binding")
+
+    LOAD_CLOCK.start()
+
     {
       const offset = 0;
-      const vertexCount = 6 * texturePlacement.length;
+      const vertexCount = 6 * texturePlacement.length
       // gl.drawArrays(gl.TRIANGLES, offset, vertexCount);
       gl.drawElements(gl.TRIANGLES, vertexCount, gl.UNSIGNED_SHORT, offset)
     }
+
+    LOAD_CLOCK.print_time("draw")
   }
   
   return (<canvas ref={ref} width={width} height={height} />)
