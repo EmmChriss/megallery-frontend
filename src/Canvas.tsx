@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useMemo, useState } from 'react'
 import { mat4 } from 'gl-matrix'
 import { decode as decodePng } from 'fast-png'
 import { decode as decodeMsgPack } from "@msgpack/msgpack"
-import { Clock } from "./util"
+import { measureTime, measureTimeCallback } from "./util"
 
 const BASE_URL = "http://localhost:37371"
 
@@ -66,8 +66,6 @@ function loadShader(gl: WebGLRenderingContext, type: number, source: string) {
 }
 
 const ZOOM_BASE = 1.005
-
-const LOAD_CLOCK = new Clock()
 
 const Canvas = ({width, height}: Props) => {
   const ref = useRef<HTMLCanvasElement>(null)
@@ -221,14 +219,14 @@ const Canvas = ({width, height}: Props) => {
     if (gl == null)
       return
 
-    LOAD_CLOCK.start()
+    const t = measureTimeCallback("server response", 1)
 
     // start fetching images
     fetch(`${BASE_URL}/images/data?width=200&height=200`)
       .then((fo) => fo.arrayBuffer())
       .then((buf) => decodeMsgPack(buf))
       .then((doc) => setResponse(doc as ImageResponse))
-      .then(() => LOAD_CLOCK.print_time("server response"))
+      .then(() => t())
       .catch(console.error)
   }, [gl])
 
@@ -237,28 +235,24 @@ const Canvas = ({width, height}: Props) => {
     if (gl == null || glData == null || response == null)
       return
 
-    LOAD_CLOCK.start()
+    const image = measureTime("texture decode", 1, () => {
+      // decode image into buffer
+      return decodePng(response.data); // return as Uint8Array
+    })
 
-    // decode image into buffer
-    const image = decodePng(response.data); // return as Uint8Array
+    measureTime("texture upload", 1, () => {
+      // Flip image pixels into the bottom-to-top order that WebGL expects.
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
 
-    LOAD_CLOCK.print_time("texture decode")
+      // fill texture with data and configure it
+      gl.bindTexture(gl.TEXTURE_2D, glData.texture);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, response.width, response.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, image.data);
+      // gl.generateMipmap(gl.TEXTURE_2D);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    })
 
-    LOAD_CLOCK.start()
-
-    // Flip image pixels into the bottom-to-top order that WebGL expects.
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-
-    // fill texture with data and configure it
-    gl.bindTexture(gl.TEXTURE_2D, glData.texture);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, response.width, response.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, image.data);
-    // gl.generateMipmap(gl.TEXTURE_2D);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-
-    LOAD_CLOCK.print_time("texture upload")
-    
   }, [gl, glData, response])
 
   // after fetch, on update, create buffer data
@@ -266,7 +260,7 @@ const Canvas = ({width, height}: Props) => {
     if (gl == null || glData == null || response == null)
       return
 
-    LOAD_CLOCK.start()
+    const clockBufferGen = measureTimeCallback("buffer gen", 1)
 
     // update coordinates
     const textureCoordBuf: number[] = []
@@ -320,10 +314,10 @@ const Canvas = ({width, height}: Props) => {
       i += 4
     }
 
-    LOAD_CLOCK.print_time("buffer gen")
+    clockBufferGen()
 
-    LOAD_CLOCK.start()
-
+    
+    measureTime("buffer upload", 1, () => {
     // upload texture coordinates
     gl.bindBuffer(gl.ARRAY_BUFFER, glData.textureCoordBuffer)
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(textureCoordBuf), gl.STATIC_DRAW)
@@ -336,7 +330,7 @@ const Canvas = ({width, height}: Props) => {
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, glData.indexBuffer)
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indexBuf), gl.STATIC_DRAW)
 
-    LOAD_CLOCK.print_time("buffer upload")
+    })
 
     drawScene()
   }, [gl, glData, texturePlacement, response])
@@ -345,7 +339,7 @@ const Canvas = ({width, height}: Props) => {
     if (gl == null || glData == null || response == null)
       return
 
-    LOAD_CLOCK.start()
+    const clockDraw = measureTimeCallback("draw", 1)
 
     gl.viewport(0, 0, width, height)
     
@@ -378,10 +372,6 @@ const Canvas = ({width, height}: Props) => {
     // Set the drawing position to the "identity" point, which is
     // the center of the scene.
     const modelViewMatrix = mat4.create();
-
-    LOAD_CLOCK.print_time("matrix calculation")
-
-    LOAD_CLOCK.start()
 
     {
       // Tell WebGL how to pull out the positions from the position
@@ -452,9 +442,6 @@ const Canvas = ({width, height}: Props) => {
       gl.uniform1i(glData.programData.uniformLocations.uSampler, 0);
     }
 
-    LOAD_CLOCK.print_time("data binding")
-
-    LOAD_CLOCK.start()
 
     {
       const offset = 0;
@@ -463,7 +450,7 @@ const Canvas = ({width, height}: Props) => {
       gl.drawElements(gl.TRIANGLES, vertexCount, gl.UNSIGNED_SHORT, offset)
     }
 
-    LOAD_CLOCK.print_time("draw")
+    clockDraw()
   }
   
   return (<canvas ref={ref} width={width} height={height} />)
