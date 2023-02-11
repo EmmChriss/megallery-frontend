@@ -19,3 +19,8 @@ export function measureTimeCallback(label: string, threshhold: number): () => vo
       console.info(`${label} took ${time} ms`)
   }
 }
+
+export function assert(condition: boolean, msg?: string) {
+  if (!condition)
+    throw new Error(msg)
+}

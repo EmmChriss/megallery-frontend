@@ -1,12 +1,12 @@
 import { useEffect } from "react"
-import { Viewport } from "./graphics"
+import { Point, Rectangle } from "./types"
 
 const MOVE_INTERVAL_MS = 5
 const MOVE_STEP = 0.005
 const ZOOM_BASE = 1.01
 
 export function useKeyboardMovement(
-  setViewport: React.Dispatch<React.SetStateAction<Viewport>>
+  setViewport: React.Dispatch<React.SetStateAction<Rectangle>>
 ) {
   useEffect(() => {
     const keysHeld = new Set<string>()
@@ -24,19 +24,24 @@ export function useKeyboardMovement(
       
       setViewport(viewport => {
         const vp = Object.assign({}, viewport)
-        
-        vp.centerX += m.x * MOVE_STEP * vp.width
-        vp.centerY += m.y * MOVE_STEP * vp.height
- 
+
+        const prevCenter = viewport.getCenter()
+        const center = new Point(
+          prevCenter.x + m.x * MOVE_STEP * vp.w,
+          prevCenter.y + m.y * MOVE_STEP * vp.h
+        )
+        let width = viewport.w
+        let height = viewport.h
+       
         if (m.zoom > 0) {
-          vp.width /= ZOOM_BASE
-          vp.height /= ZOOM_BASE
+          width /= ZOOM_BASE
+          height /= ZOOM_BASE
         } else if (m.zoom < 0) {
-          vp.width *= ZOOM_BASE
-          vp.height *= ZOOM_BASE
+          width *= ZOOM_BASE
+          height *= ZOOM_BASE
         }
 
-        return vp
+        return Rectangle.fromCenter(center, width, height)
       })
     }
     const moveTimer = setInterval(move, MOVE_INTERVAL_MS)

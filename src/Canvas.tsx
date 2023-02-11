@@ -1,7 +1,8 @@
 import React, { useRef, useEffect, useState } from 'react'
 import { ApiImage, getImageData, getImageMetadata } from './api'
-import { DrawCommand, useGraphics, Viewport } from "./graphics"
+import { DrawCommand, useGraphics } from "./graphics"
 import { useKeyboardMovement } from './movement'
+import { Rectangle } from './types'
 import { measureTimeCallback } from './util'
 
 export type Props = {
@@ -60,18 +61,13 @@ const Canvas = ({width, height}: Props) => {
   }, [metadata])
 
   // viewport state and navigation
-  const [viewport, setViewport] = useState<Viewport>({
-    centerX: 0,
-    centerY: 0,
-    width,
-    height
-  })
+  const [viewport, setViewport] = useState<Rectangle>(new Rectangle(0, 0, width, height))
 
   // on resize, rescale viewport
   useEffect(() => setViewport(viewport => {
     const vp = Object.assign({}, viewport)
-    vp.width *= width / viewport.width
-    vp.height *= height / viewport.height
+    vp.w *= width / viewport.w
+    vp.h *= height / viewport.h
     
     return vp
   }), [setViewport, width, height])
@@ -133,7 +129,7 @@ const Canvas = ({width, height}: Props) => {
       setTimeout(() => {
         console.log('started second round')
         fetchImages(metadata.slice(0, metadata.length / 2), availableArea * 2)
-      }, 10000)
+      }, 3000)
     })
   }, [gl, metadata])
 

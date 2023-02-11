@@ -1,6 +1,7 @@
 import { mat4 } from 'gl-matrix';
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ApiImageAtlasMapping } from './api';
+import { Rectangle } from './types';
 import { measureTime, measureTimeCallback } from "./util"
 
 // Vertex shader program
@@ -149,14 +150,7 @@ export interface DrawCommand {
   h: number
 }
 
-export interface Viewport {
-  centerX: number,
-  centerY: number,
-  width: number,
-  height: number
-}
-
-export function useGraphics(canvas: HTMLCanvasElement | null, drawCommands: DrawCommand[], viewport: Viewport): {
+export function useGraphics(canvas: HTMLCanvasElement | null, drawCommands: DrawCommand[], viewport: Rectangle): {
   gl: WebGL2RenderingContext | null,
   glData: GLData | null,
   loadTexture: (
@@ -299,7 +293,6 @@ export function useGraphics(canvas: HTMLCanvasElement | null, drawCommands: Draw
 
     clockBufferGen()
 
-
     measureTime("buffer upload", 1, () => {
       // upload texture coordinates
       gl.bindBuffer(gl.ARRAY_BUFFER, glData.textureCoordBuffer)
@@ -341,11 +334,11 @@ export function useGraphics(canvas: HTMLCanvasElement | null, drawCommands: Draw
     const zFar = 100.0;
     const transformMatrix = mat4.create();
 
-    mat4.ortho(transformMatrix, -viewport.width / 2, viewport.width / 2, -viewport.height / 2, viewport.height / 2, zNear, zFar)
+    mat4.ortho(transformMatrix, -viewport.w / 2, viewport.w / 2, -viewport.h / 2, viewport.h / 2, zNear, zFar)
     mat4.translate(
       transformMatrix,
       transformMatrix,
-      [viewport.centerX, viewport.centerY, -10]
+      [viewport.getCenter().x, viewport.getCenter().y, -10]
     )
 
     {
