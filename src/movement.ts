@@ -1,38 +1,29 @@
-import { useEffect } from "react"
-import { Point, Rectangle } from "./types"
+import { useEffect } from 'react'
+import { Rectangle } from './types'
 
 const MOVE_INTERVAL_MS = 5
 const MOVE_STEP = 0.005
 const ZOOM_BASE = 1.01
 
-export function useKeyboardMovement(
-  setViewport: React.Dispatch<React.SetStateAction<Rectangle>>
-) {
+export function useKeyboardMovement(setViewport: React.Dispatch<React.SetStateAction<Rectangle>>) {
   useEffect(() => {
     const keysHeld = new Set<string>()
 
     const move = () => {
       const m = {
-        x: (keysHeld.has("a") ? 1 : 0) - (keysHeld.has("d") ? 1 : 0),
-        y: (keysHeld.has("s") ? 1 : 0) - (keysHeld.has("w") ? 1 : 0),
-        zoom: (keysHeld.has("e") ? 1 : 0) - (keysHeld.has("q") ? 1 : 0)
+        x: (keysHeld.has('a') ? 1 : 0) - (keysHeld.has('d') ? 1 : 0),
+        y: (keysHeld.has('s') ? 1 : 0) - (keysHeld.has('w') ? 1 : 0),
+        zoom: (keysHeld.has('e') ? 1 : 0) - (keysHeld.has('q') ? 1 : 0),
       }
 
       // no movement
-      if (m.x == 0 && m.y == 0 && m.zoom == 0)
-        return
-      
-      setViewport(viewport => {
-        const vp = Object.assign({}, viewport)
+      if (m.x == 0 && m.y == 0 && m.zoom == 0) return
 
-        const prevCenter = viewport.getCenter()
-        const center = new Point(
-          prevCenter.x + m.x * MOVE_STEP * vp.w,
-          prevCenter.y + m.y * MOVE_STEP * vp.h
-        )
+      setViewport(viewport => {
+        const center = viewport.getCenter().translate(m.x * MOVE_STEP * viewport.w, m.y * MOVE_STEP * viewport.h)
         let width = viewport.w
         let height = viewport.h
-       
+
         if (m.zoom > 0) {
           width /= ZOOM_BASE
           height /= ZOOM_BASE
@@ -54,12 +45,12 @@ export function useKeyboardMovement(
       keysHeld.delete(ev.key)
     }
 
-    window.addEventListener("keydown", onKeyDown)
-    window.addEventListener("keyup", onKeyUp)
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('keyup', onKeyUp)
 
     return () => {
-      window.removeEventListener("keydown", onKeyDown)
-      window.removeEventListener("keyup", onKeyUp)
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keyup', onKeyUp)
       clearInterval(moveTimer)
     }
   }, [])

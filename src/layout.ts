@@ -1,11 +1,11 @@
-import { ApiImage } from "./api";
-import { DrawCommand } from "./graphics";
+import { ApiImage } from './api'
+import { DrawCommand } from './graphics'
 
 export type Layout<T> = (metadata: T[]) => DrawCommand[]
 
 export interface GridLayoutParams {
-  width?: number,
-  height?: number,
+  width?: number
+  height?: number
   spacing?: number
 }
 
@@ -28,13 +28,13 @@ export function createGridLayout(metadata: ApiImage[], params?: GridLayoutParams
     } else {
       w *= wh
     }
-  
+
     return {
       id: metadata[i].id,
       w: w,
       h: h,
       x: (width + spacing) * _j,
-      y: (height + spacing) * _i
+      y: (height + spacing) * _i,
     }
   })
 }

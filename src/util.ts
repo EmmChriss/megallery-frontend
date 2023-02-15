@@ -1,13 +1,12 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState } from 'react'
 
 export function measureTime<T>(label: string, threshhold: number, f: () => T): T {
   const start_time = performance.now()
-  
+
   const v = f()
 
   const time = performance.now() - start_time
-  if (time > threshhold)
-    console.info(`${label} took ${time} ms`)
+  if (time > threshhold) console.info(`${label} took ${time} ms`)
 
   return v
 }
@@ -17,8 +16,7 @@ export function measureTimeCallback(label: string, threshhold: number): () => vo
 
   return () => {
     const time = performance.now() - start_time
-    if (time > threshhold)
-      console.info(`${label} took ${time} ms`)
+    if (time > threshhold) console.info(`${label} took ${time} ms`)
   }
 }
 
@@ -27,18 +25,16 @@ export function measureTimeAsync<T>(label: string, threshhold: number, f: Promis
 
   return f.finally(() => {
     const time = performance.now() - start_time
-    if (time > threshhold)
-        console.info(`${label} took ${time} ms`)
+    if (time > threshhold) console.info(`${label} took ${time} ms`)
   })
 }
 
 export function assert(condition: boolean, msg?: string) {
-  if (!condition)
-    throw new Error(msg)
+  if (!condition) throw new Error(msg)
 }
 
 export interface QueryOptions {
-  retryTime?: number,
+  retryTime?: number
 }
 
 export interface QueryResult {
@@ -46,19 +42,19 @@ export interface QueryResult {
   error: any | undefined
 }
 
-export type QueryStatus = "initial" | "loading" | "done" | "waiting"
+export type QueryStatus = 'initial' | 'loading' | 'done' | 'waiting'
 
 export function useQuery<T>(query: () => T | Promise<T>, initialValue: T, opts: QueryOptions = {}): [T, QueryResult] {
   const [data, setData] = useState<T>(initialValue)
   const [error, setError] = useState<any>()
 
-  const status = useRef<QueryStatus>("initial")
+  const status = useRef<QueryStatus>('initial')
   const doQuery = () => {
-    status.current = "loading"
+    status.current = 'loading'
     Promise.resolve()
       .then(() => query())
       .then(data => {
-        status.current = "done"
+        status.current = 'done'
         setData(data)
       })
       .catch(error => {
@@ -67,14 +63,13 @@ export function useQuery<T>(query: () => T | Promise<T>, initialValue: T, opts: 
           setTimeout(() => doQuery(), retryTime)
         }
 
-        status.current = "waiting"
+        status.current = 'waiting'
         setError(error)
       })
   }
-  
+
   useEffect(() => {
-    if (status.current !== "initial")
-      return
+    if (status.current !== 'initial') return
     doQuery()
   })
 
