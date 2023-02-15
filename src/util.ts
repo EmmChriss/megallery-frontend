@@ -38,15 +38,15 @@ export interface QueryResult {
 
 export type QueryStatus = "initial" | "loading" | "done" | "waiting"
 
-export function useQuery<T>(query: PromiseLike<T>, opts: QueryOptions = {}): [T | undefined, QueryResult] {
-  const [data, setData] = useState<T>()
+export function useQuery<T>(query: () => T | Promise<T>, initialValue: T, opts: QueryOptions = {}): [T, QueryResult] {
+  const [data, setData] = useState<T>(initialValue)
   const [error, setError] = useState<any>()
 
   const status = useRef<QueryStatus>("initial")
   const doQuery = () => {
     status.current = "loading"
     Promise.resolve()
-      .then(() => query)
+      .then(() => query())
       .then(data => {
         status.current = "done"
         setData(data)

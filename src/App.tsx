@@ -3,32 +3,23 @@ import { ApiImage, getImageData, getImageMetadata } from './api'
 import { useGraphics, useViewport } from "./graphics"
 import { createGridLayout } from './layout'
 import { useKeyboardMovement } from './movement'
-import { measureTimeCallback } from './util'
+import { measureTimeCallback, useQuery } from './util'
 
 const App = () => {
   const ref = useRef<HTMLCanvasElement>(null)
 
-  const [metadata, setMetadata] = useState<ApiImage[]>([])
+  const [metadata] = useQuery(async () => {
+    const metadataClock = measureTimeCallback("fetching metadata", 1)
+    const metadata = await getImageMetadata()
+    metadataClock()
+    return metadata
+  }, [])
   const [viewport, setViewport] = useViewport()
   const layout = useMemo(() => createGridLayout(metadata), [metadata])
   const { gl, loadTexture } = useGraphics(ref.current, layout, viewport)
 
   // use keyboard to navigate
   useKeyboardMovement(setViewport)
-
-  // query metadata
-  useEffect(() => {
-    if (metadata.length !== 0)
-      return
-
-    const metadataClock = measureTimeCallback("fetching metadata", 1)
-    
-    getImageMetadata()
-      .then(meta => setMetadata(meta))
-      .then(_ => metadataClock())
-      .catch(console.error)
-  }, [metadata.length])
-
 
   const fetchImages = (images: ApiImage[], targetArea: number) => {
     if (!gl)
