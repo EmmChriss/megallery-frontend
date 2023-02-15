@@ -10,12 +10,7 @@ const App = () => {
 
   const [metadata, setMetadata] = useState<ApiImage[]>([])
   const [viewport, setViewport] = useViewport()
-  const layout = useMemo(() => {
-    if (!metadata)
-      return []
-
-    return createGridLayout(metadata)
-  }, [metadata])
+  const layout = useMemo(() => createGridLayout(metadata), [metadata])
   const { gl, loadTexture } = useGraphics(ref.current, layout, viewport)
 
   // use keyboard to navigate
