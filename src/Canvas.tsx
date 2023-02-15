@@ -1,6 +1,7 @@
-import React, { useRef, useEffect, useState } from 'react'
+import React, { useRef, useEffect, useState, useMemo } from 'react'
 import { ApiImage, getImageData, getImageMetadata } from './api'
 import { DrawCommand, useGraphics } from "./graphics"
+import { createGridLayout, Layout } from './layout'
 import { useKeyboardMovement } from './movement'
 import { Rectangle } from './types'
 import { measureTimeCallback } from './util'
@@ -14,15 +15,22 @@ const Canvas = ({ width, height }: Props) => {
   const ref = useRef<HTMLCanvasElement>(null)
 
   const [metadata, setMetadata] = useState<ApiImage[]>([])
-  const [drawQueue, setDrawQueue] = useState<DrawCommand[]>([])
   const [viewport, setViewport] = useState<Rectangle>(new Rectangle(0, 0, width, height))
+  const layout = useMemo(() => {
+    if (!metadata)
+      return []
+
+    return createGridLayout(metadata)
+  }, [metadata])
+  const { gl, loadTexture } = useGraphics(ref.current, layout, viewport)
 
   // on resize, rescale viewport
   useEffect(() => 
     setViewport(viewport => 
       viewport.scale(width / viewport.w, height / viewport.h)
     ), [setViewport, width, height])
-  
+
+  // use keyboard to navigate
   useKeyboardMovement(setViewport)
 
   // query metadata
@@ -38,38 +46,6 @@ const Canvas = ({ width, height }: Props) => {
       .catch(console.error)
   }, [metadata.length])
 
-  // generate grid layout
-  useEffect(() => {
-    if (metadata == null)
-      return
-
-    const a = Math.trunc(Math.sqrt(metadata.length))
-    const placement = Array.from(Array(metadata.length), (_, i) => {
-      const _i = i % a
-      const _j = Math.trunc(i / a)
-      const wh = metadata[i].width / metadata[i].height
-
-      let width = 100
-      let height = 100
-
-      if (wh > 1) {
-        height /= wh
-      } else {
-        width *= wh
-      }
-      
-      return {
-        id: metadata[i].id,
-        w: width,
-        h: height,
-        x: 110 * _j,
-        y: 110 * _i
-      }
-    })
-    setDrawQueue(placement)
-  }, [metadata])
-
-  const {gl, loadTexture} = useGraphics(ref.current, drawQueue, viewport)
 
   const fetchImages = (images: ApiImage[], targetArea: number) => {
     if (!gl)
