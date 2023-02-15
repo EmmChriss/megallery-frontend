@@ -1,8 +1,24 @@
 import { mat4 } from 'gl-matrix';
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Dispatch, SetStateAction, useEffect, useMemo, useRef, useState } from 'react'
 import { ApiImageAtlasMapping } from './api';
 import { Rectangle } from './types';
 import { measureTime, measureTimeCallback } from "./util"
+
+export function useViewport(): [Rectangle, Dispatch<SetStateAction<Rectangle>>] {
+  const [viewport, setViewport] = useState<Rectangle>(new Rectangle(0, 0, window.innerWidth, window.innerHeight))
+
+  useEffect(() => {
+    const updateSize = () => 
+      setViewport(viewport => 
+        viewport.scale(window.innerWidth / viewport.w, window.innerHeight / viewport.h)
+      )
+    
+    window.addEventListener("resize", updateSize)
+    return () => window.removeEventListener("reize", updateSize)
+  }, [])
+
+  return [viewport, setViewport]
+}
 
 // Vertex shader program
 const vsSource = `
