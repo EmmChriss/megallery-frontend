@@ -46,7 +46,7 @@ export interface ApiImageAtlasMapping {
 }
 
 export interface ApiImageData {
-  atlas: DecodedPng,
+  atlas: ImageBitmap,
   mapping: ApiImageAtlasMapping[]
 }
 
@@ -77,11 +77,14 @@ export function getImageData(req: ApiImageDataRequest): Promise<ApiImageData> {
           return
         return decodeMsgPack(buf) as ApiImageDataResponse
       })
-      .then(resp => {
+      .then(async (resp) => {
         if (!resp)
           return
       
-        const data = measureTime("texture decode", 1, () => decodePng(resp.data, { checkCrc: true }) )
+        const decodeClock = measureTimeCallback("texture decode", 1)
+        const data = await createImageBitmap(new Blob([resp.data]), { imageOrientation: "flipY" })
+        decodeClock()
+      
         resolve({
           atlas: data,
           mapping: resp.mapping

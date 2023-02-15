@@ -154,8 +154,7 @@ export function useGraphics(canvas: HTMLCanvasElement | null, drawCommands: Draw
   gl: WebGL2RenderingContext | null,
   glData: GLData | null,
   loadTexture: (
-    buffer: ArrayBufferLike,
-    channels: number,
+    source: TexImageSource,
     atlas: TextureAtlas
   ) => void,
   draw: () => void
@@ -180,34 +179,21 @@ export function useGraphics(canvas: HTMLCanvasElement | null, drawCommands: Draw
   const glData = useMemo(() => gl && initGLData(gl), [gl]);
 
   function loadTexture (
-    buffer: ArrayBufferLike,
-    channels: number,
+    source: TexImageSource,
     atlas: TextureAtlas
   ) {
     if (gl == null || glData == null)
       return
 
-    // Flip image pixels into the bottom-to-top order that WebGL expects.
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-
     // fill texture with data and configure it
     gl.bindTexture(gl.TEXTURE_2D, glData.texture);
 
-    let format: number
-    if (channels == 3)
-      format = gl.RGB
-    else if (channels == 4)
-      format = gl.RGBA
-    else throw "Unsupported texture: number of channels is not 3 or 4"
-    
-    gl.texImage2D(gl.TEXTURE_2D, 0, format, atlas.width, atlas.height, 0, format, gl.UNSIGNED_BYTE, new Uint8Array(buffer))
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, source)
 
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
-    // gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
-    // gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
 
     // build id->mapping structure
     const mapping: Map<string, ApiImageAtlasMapping> = new Map()
@@ -334,11 +320,13 @@ export function useGraphics(canvas: HTMLCanvasElement | null, drawCommands: Draw
     const zFar = 100.0;
     const transformMatrix = mat4.create();
 
+    const center = viewport.getCenter()
+
     mat4.ortho(transformMatrix, -viewport.w / 2, viewport.w / 2, -viewport.h / 2, viewport.h / 2, zNear, zFar)
     mat4.translate(
       transformMatrix,
       transformMatrix,
-      [viewport.getCenter().x, viewport.getCenter().y, -10]
+      [center.x, center.y, -10]
     )
 
     {

@@ -10,11 +10,20 @@ export type Props = {
   height: number
 }
 
-const Canvas = ({width, height}: Props) => {
+const Canvas = ({ width, height }: Props) => {
   const ref = useRef<HTMLCanvasElement>(null)
 
   const [metadata, setMetadata] = useState<ApiImage[]>([])
   const [drawQueue, setDrawQueue] = useState<DrawCommand[]>([])
+  const [viewport, setViewport] = useState<Rectangle>(new Rectangle(0, 0, width, height))
+
+  // on resize, rescale viewport
+  useEffect(() => 
+    setViewport(viewport => 
+      viewport.scale(width / viewport.w, height / viewport.h)
+    ), [setViewport, width, height])
+  
+  useKeyboardMovement(setViewport)
 
   // query metadata
   useEffect(() => {
@@ -60,20 +69,6 @@ const Canvas = ({width, height}: Props) => {
     setDrawQueue(placement)
   }, [metadata])
 
-  // viewport state and navigation
-  const [viewport, setViewport] = useState<Rectangle>(new Rectangle(0, 0, width, height))
-
-  // on resize, rescale viewport
-  useEffect(() => setViewport(viewport => {
-    const vp = Object.assign({}, viewport)
-    vp.w *= width / viewport.w
-    vp.h *= height / viewport.h
-    
-    return vp
-  }), [setViewport, width, height])
-  
-  useKeyboardMovement(setViewport)
-
   const {gl, loadTexture} = useGraphics(ref.current, drawQueue, viewport)
 
   const fetchImages = (images: ApiImage[], targetArea: number) => {
@@ -97,7 +92,7 @@ const Canvas = ({width, height}: Props) => {
       atlas_max_area: glTextureSizeLimit * glTextureSizeLimit, 
     }).then(imageData => {
       const textureAtlas = { mapping: imageData.mapping, width: imageData.atlas.width, height: imageData.atlas.height };
-      loadTexture(imageData.atlas.data, imageData.atlas.channels, textureAtlas)
+      loadTexture(imageData.atlas, textureAtlas)
     })
   }
 
@@ -124,19 +119,15 @@ const Canvas = ({width, height}: Props) => {
       atlas_max_area: glTextureSizeLimit * glTextureSizeLimit,
     }).then(imageData => {
       const textureAtlas = { mapping: imageData.mapping, width: imageData.atlas.width, height: imageData.atlas.height };
-      loadTexture(imageData.atlas.data, imageData.atlas.channels, textureAtlas)
-    }).then(_ => {
+      loadTexture(imageData.atlas, textureAtlas)
+    })
+    .then(_ => {
       setTimeout(() => {
         console.log('started second round')
         fetchImages(metadata.slice(0, metadata.length / 2), availableArea * 2)
       }, 3000)
     })
   }, [gl, metadata])
-
-  // get image sizes based on viewport
-  useEffect(() => {
-    
-  }, [viewport])
 
   return (<canvas ref={ref} width={width} height={height} />)
 }
