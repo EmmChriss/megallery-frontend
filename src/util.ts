@@ -22,6 +22,16 @@ export function measureTimeCallback(label: string, threshhold: number): () => vo
   }
 }
 
+export function measureTimeAsync<T>(label: string, threshhold: number, f: Promise<T>): Promise<T> {
+  const start_time = performance.now()
+
+  return f.finally(() => {
+    const time = performance.now() - start_time
+    if (time > threshhold)
+        console.info(`${label} took ${time} ms`)
+  })
+}
+
 export function assert(condition: boolean, msg?: string) {
   if (!condition)
     throw new Error(msg)
