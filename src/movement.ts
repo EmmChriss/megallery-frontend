@@ -17,7 +17,7 @@ export function useKeyboardMovement(setViewport: React.Dispatch<React.SetStateAc
       }
 
       // no movement
-      if (m.x == 0 && m.y == 0 && m.zoom == 0) return
+      if (m.x === 0 && m.y === 0 && m.zoom === 0) return
 
       setViewport(viewport => {
         const center = viewport.getCenter().translate(m.x * MOVE_STEP * viewport.w, m.y * MOVE_STEP * viewport.h)

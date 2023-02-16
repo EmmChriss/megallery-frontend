@@ -1,5 +1,6 @@
 import { decode as decodePng, DecodedPng } from 'fast-png'
 import { decode as decodeMsgPack } from '@msgpack/msgpack'
+import * as msgpackr from "msgpackr"
 import { measureTime, measureTimeCallback } from './util'
 
 export type ApiError = 'FAILED'
@@ -86,6 +87,48 @@ export function getImageData(req: ApiImageDataRequest): Promise<ApiImageData> {
           mapping: resp.mapping,
         })
       })
+      .catch(reject)
+  })
+}
+
+export interface ApiImageDataRequestV2 {
+  id: string
+  max_width: number
+  max_height: number
+}
+
+export function getImageDataByIds(req: ApiImageDataRequestV2[]): Promise<(ImageBitmap | undefined)[]> {
+  const request = new Request(`${BASE_URL}/images/data_new`, {
+    method: 'POST',
+    body: JSON.stringify(req),
+    headers: [['content-type', 'application/json']],
+  })
+
+  return new Promise((resolve, reject) => {
+    const responseClock = measureTimeCallback('server response', 1)
+    fetch(request)
+      .then(resp => {
+        if (!resp.ok) resp.text().then(reject).catch(reject)
+        else return resp.arrayBuffer()
+      })
+      .then(async buf => {
+        responseClock()
+        if (!buf)
+          throw new Error()
+
+        const decodedResponse = measureTime("decode response", 1, () => decodeMsgPack(buf)) as (Uint8Array | null)[]
+
+        return await Promise.all(decodedResponse
+          .map(async buf => {
+            if (!buf)
+              return
+
+            console.log("imaging")
+            return await createImageBitmap(new Blob([buf]))
+          })
+        )
+      })
+      .then(resolve)
       .catch(reject)
   })
 }

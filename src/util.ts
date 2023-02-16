@@ -39,14 +39,14 @@ export interface QueryOptions {
 
 export interface QueryResult {
   status: QueryStatus
-  error: any | undefined
+  error: unknown | undefined
 }
 
 export type QueryStatus = 'initial' | 'loading' | 'done' | 'waiting'
 
 export function useQuery<T>(query: () => T | Promise<T>, initialValue: T, opts: QueryOptions = {}): [T, QueryResult] {
   const [data, setData] = useState<T>(initialValue)
-  const [error, setError] = useState<any>()
+  const [error, setError] = useState<unknown>()
 
   const status = useRef<QueryStatus>('initial')
   const doQuery = () => {

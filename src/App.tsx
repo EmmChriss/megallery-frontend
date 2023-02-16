@@ -1,5 +1,5 @@
-import React, { useRef, useEffect, useState, useMemo } from 'react'
-import { getImageData, getImageMetadata } from './api'
+import React, { useRef, useEffect, useMemo } from 'react'
+import { getImageData, getImageDataByIds, getImageMetadata } from './api'
 import { useGraphics, useViewport } from './graphics'
 import { createGridLayout } from './layout'
 import { useKeyboardMovement } from './movement'
@@ -18,7 +18,7 @@ const App = () => {
 
   // after gl init, start fetching images
   useEffect(() => {
-    if (gl == null || metadata.length == 0) return
+    if (gl === null || metadata.length === 0) return
 
     const totalArea = metadata.map(m => m.width * m.height).reduce((p, c) => p + c, 0)
     const availableArea = window.screen.width * window.screen.height
@@ -32,17 +32,36 @@ const App = () => {
 
     // get top-level image sizes
     getImageData({
-      icon_max_width: Math.round(maxWidth),
-      icon_max_height: Math.round(maxHeight),
+      // icon_max_width: Math.round(maxWidth),
+      // icon_max_height: Math.round(maxHeight),
+      icon_max_width: 150,
+      icon_max_height: 150,
       atlas_max_area: glTextureSizeLimit * glTextureSizeLimit,
-    }).then(imageData => {
-      const textureAtlas = {
-        mapping: imageData.mapping,
-        width: imageData.atlas.width,
-        height: imageData.atlas.height,
-      }
-      loadTexture(imageData.atlas, textureAtlas)
     })
+      .then(imageData => {
+        const textureAtlas = {
+          mapping: imageData.mapping,
+          width: imageData.atlas.width,
+          height: imageData.atlas.height,
+        }
+        loadTexture(imageData.atlas, textureAtlas)
+      })
+      .then(_ => {
+        console.log('new api, no overall texture size limit')
+        const req = metadata.map(m =>
+          Object.assign(
+            {},
+            {
+              id: m.id,
+              max_width: 150,
+              max_height: 150,
+            },
+          ),
+        )
+        getImageDataByIds(req)
+          .then(a => console.log(a.length))
+          .catch(e => console.error(e))
+      })
   }, [gl, metadata])
 
   return <canvas ref={ref} width={window.innerWidth} height={window.innerHeight} />
