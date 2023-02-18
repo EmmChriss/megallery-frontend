@@ -1,5 +1,5 @@
-import React, { useRef, useEffect, useMemo } from 'react'
-import { getImageData, getImageDataByIds, getImageMetadata } from './api'
+import React, { useRef, useMemo } from 'react'
+import { getImageMetadata } from './api'
 import { useGLContext, useGraphics, useViewport } from './graphics'
 import { createGridLayout } from './layout'
 import { useKeyboardMovement } from './movement'

@@ -280,6 +280,7 @@ export function draw(
   mat4.translate(transformMatrix, transformMatrix, [center.x, center.y, -10])
 
   for (const { texture, offset, vertexCount } of drawParams) {
+    // eslint-disable-next-line
     {
       // Tell WebGL how to pull out the positions from the position
       // buffer into the vertexPosition attribute.
@@ -300,6 +301,7 @@ export function draw(
       gl.enableVertexAttribArray(glData.programData.attributes.aVertexPosition)
     }
 
+    // eslint-disable-next-line
     {
       // Tell WebGL how to pull out the positions from the texture coord buffer
       const num = 2 // every coordinate composed of 2 values
@@ -320,6 +322,7 @@ export function draw(
     // Set the shader uniforms
     gl.uniformMatrix4fv(glData.programData.uniforms.uTransformMatrix, false, transformMatrix)
 
+    // eslint-disable-next-line
     {
       // Tell WebGL we want to affect texture unit 0
       gl.activeTexture(gl.TEXTURE0)
@@ -331,6 +334,7 @@ export function draw(
       gl.uniform1i(glData.programData.uniforms.uSampler, 0)
     }
 
+    // eslint-disable-next-line
     {
       gl.drawElements(gl.TRIANGLES, vertexCount, gl.UNSIGNED_SHORT, offset * 6 * 2)
     }

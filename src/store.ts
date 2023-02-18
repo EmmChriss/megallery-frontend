@@ -118,7 +118,7 @@ export function useTextureStore(
     const graphicsDrawCommands = drawCommands
       .map(dc => {
         const mapping = baseAtlas.mapping.get(dc.id)
-        if (!mapping) return
+        if (!mapping) return null
 
         return {
           texture: baseAtlas.texture,
