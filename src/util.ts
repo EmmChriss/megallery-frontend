@@ -92,3 +92,13 @@ export function useQuery<T>(
 
   return [data, { status: status.current, error }]
 }
+
+export function useEq<T>(val: T, isEq: (prev: T, current: T) => boolean): T {
+  const value = useRef(val)
+
+  if (!isEq(value.current, val)) {
+    value.current = val
+  }
+
+  return value.current
+}

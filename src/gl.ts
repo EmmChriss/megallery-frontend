@@ -158,16 +158,6 @@ export function updateBuffers(
 ): DrawParams[] {
   const clockBufferGen = measureTimeCallback('buffer gen', 1)
 
-  // DEBUG: remove this later
-  if (drawCommands.length === 0) return []
-
-  const texture = drawCommands[0].texture
-  drawCommands.push({
-    texture,
-    src: new Rectangle(0, 0, texture.width, texture.height),
-    dst: new Rectangle(-texture.width, 0, texture.width, texture.height),
-  })
-
   // update coordinates
   const textureCoordBuf: number[] = []
   const positionBuf: number[] = []

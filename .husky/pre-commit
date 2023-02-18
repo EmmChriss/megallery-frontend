@@ -1,10 +1,12 @@
 #!/usr/bin/env sh
 . "$(dirname -- "$0")/_/husky.sh"
 
-npm format:check || {
+npm run format:check || {
   echo "Formatting error, exiting.."
+  exit 1
 }
 
 npx lint-staged || {
   echo "Linting error, exiting.."
+  exit 1
 }
