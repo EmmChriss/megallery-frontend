@@ -50,4 +50,10 @@ export class Rectangle {
   scale(scaleX: number, scaleY: number): Rectangle {
     return new Rectangle(this.x, this.y, this.w * scaleX, this.h * scaleY)
   }
+
+  intersects(other: Rectangle): boolean {
+    return (
+      this.x < other.x + other.w && this.x + this.w > other.x && this.y < other.y + other.h && this.y + this.h > other.y
+    )
+  }
 }

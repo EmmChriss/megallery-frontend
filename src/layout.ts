@@ -1,5 +1,6 @@
 import { ApiImage } from './api'
 import { DrawCommand } from './store'
+import { Rectangle } from './types'
 
 export type Layout<T> = (metadata: T[]) => DrawCommand[]
 
@@ -29,12 +30,8 @@ export function createGridLayout(metadata: ApiImage[], params?: GridLayoutParams
       w *= wh
     }
 
-    return {
-      id: metadata[i].id,
-      w: w,
-      h: h,
-      x: (width + spacing) * _j,
-      y: (height + spacing) * _i,
-    }
+    const dst = new Rectangle((width + spacing) * _j, (height + spacing) * _i, w, h)
+
+    return { dst, id: metadata[i].id }
   })
 }

@@ -1,16 +1,13 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { getImageDataByIds } from './api'
 import { Texture, uploadSubTexture, uploadTexture } from './gl'
 import { GLContext, GraphicsDrawCommand } from './graphics'
 import { Point, Rectangle } from './types'
-import { measureTime, useEq, useQuery } from './util'
+import { measureTime, useEq, useQuery, useThrottledMemo } from './util'
 
 export interface DrawCommand {
   id: string
-  x: number
-  y: number
-  w: number
-  h: number
+  dst: Rectangle
 }
 
 interface TextureAtlas {
@@ -112,6 +109,8 @@ export function useTextureStore(
     [glContext, useEq(setOfIds, (s1, s2) => [...s1.keys()].every(k => s2.has(k)))],
   )
 
+  const visible = useThrottledMemo(() => drawCommands.filter(dc => viewport.intersects(dc.dst)), [viewport], 1000)
+
   useEffect(() => {
     if (!baseAtlas) return
 
@@ -123,13 +122,15 @@ export function useTextureStore(
         return {
           texture: baseAtlas.texture,
           src: mapping,
-          dst: new Rectangle(dc.x, dc.y, dc.w, dc.h),
+          dst: dc.dst,
         }
       })
       .filter(a => a) as GraphicsDrawCommand[]
 
     setGraphicsDrawCommands(graphicsDrawCommands)
   }, [baseAtlas, drawCommands])
+
+  useEffect(() => console.log(visible.length), [visible])
 
   return graphicsDrawCommands
 }

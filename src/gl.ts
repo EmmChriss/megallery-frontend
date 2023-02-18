@@ -276,7 +276,7 @@ export function draw(
   const center = viewport.getCenter()
 
   mat4.ortho(transformMatrix, -viewport.w / 2, viewport.w / 2, -viewport.h / 2, viewport.h / 2, zNear, zFar)
-  mat4.translate(transformMatrix, transformMatrix, [center.x, center.y, -10])
+  mat4.translate(transformMatrix, transformMatrix, [-center.x, -center.y, -10])
 
   for (const { texture, offset, vertexCount } of drawParams) {
     // eslint-disable-next-line

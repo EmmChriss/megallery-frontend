@@ -102,3 +102,25 @@ export function useEq<T>(val: T, isEq: (prev: T, current: T) => boolean): T {
 
   return value.current
 }
+
+export function useThrottledMemo<T>(callback: () => T, deps: React.DependencyList | undefined, ms: number): T {
+  const [value, setValue] = useState<T>(callback)
+
+  const latestCallback = useRef(callback)
+  latestCallback.current = callback
+
+  const timerStarted = useRef(false)
+
+  useEffect(() => {
+    if (timerStarted.current) return
+    timerStarted.current = true
+
+    setTimeout(() => {
+      timerStarted.current = false
+      const newValue = latestCallback.current()
+      setValue(newValue)
+    }, ms)
+  }, deps)
+
+  return value
+}
