@@ -245,7 +245,6 @@ export function updateBuffers(
   console.log(
     `uploaded ${drawCommands.length} cmd ${textureCoordBuf.length} texcoord ${positionBuf.length} pos ${indexBuf.length} idx`,
   )
-  console.log('params', drawParams)
 
   return drawParams
 }
