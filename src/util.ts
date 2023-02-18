@@ -44,11 +44,18 @@ export interface QueryResult {
 
 export type QueryStatus = 'initial' | 'loading' | 'done' | 'waiting'
 
-export function useQuery<T>(query: () => T | Promise<T>, initialValue: T, opts: QueryOptions = {}): [T, QueryResult] {
+export function useQuery<T>(
+  query: () => T | Promise<T>,
+  initialValue: T,
+  deps: React.DependencyList | undefined = [],
+  opts: QueryOptions = {},
+): [T, QueryResult] {
   const [data, setData] = useState<T>(initialValue)
   const [error, setError] = useState<unknown>()
 
   const status = useRef<QueryStatus>('initial')
+  const runAgain = useRef<boolean>(false)
+
   const doQuery = () => {
     status.current = 'loading'
     Promise.resolve()
@@ -56,6 +63,11 @@ export function useQuery<T>(query: () => T | Promise<T>, initialValue: T, opts: 
       .then(data => {
         status.current = 'done'
         setData(data)
+
+        if (runAgain.current) {
+          runAgain.current = false
+          doQuery()
+        }
       })
       .catch(error => {
         const retryTime = opts?.retryTime || 0
@@ -67,6 +79,11 @@ export function useQuery<T>(query: () => T | Promise<T>, initialValue: T, opts: 
         setError(error)
       })
   }
+
+  useEffect(() => {
+    if (status.current === 'done') status.current = 'initial'
+    else runAgain.current = true
+  }, deps)
 
   useEffect(() => {
     if (status.current !== 'initial') return

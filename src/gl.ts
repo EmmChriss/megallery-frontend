@@ -1,7 +1,7 @@
 import { mat4 } from 'gl-matrix'
-import { GraphicsDrawCommand } from "./graphics"
-import { Rectangle } from "./types"
-import { measureTime, measureTimeCallback } from "./util"
+import { GraphicsDrawCommand } from './graphics'
+import { Point, Rectangle } from './types'
+import { measureTime, measureTimeCallback } from './util'
 
 // Vertex shader program
 const vsSource = `
@@ -61,8 +61,6 @@ function loadShader(gl: WebGLRenderingContext, type: number, source: string) {
 }
 
 export interface GLData {
-  texture: WebGLTexture
-
   textureCoordBuffer: WebGLBuffer
   positionBuffer: WebGLBuffer
   indexBuffer: WebGLBuffer
@@ -71,9 +69,6 @@ export interface GLData {
 }
 
 export function initGLData(gl: WebGL2RenderingContext): GLData | null {
-  const texture = gl.createTexture()
-  if (texture == null) return null
-
   const textureCoordBuffer = gl.createBuffer()
   if (textureCoordBuffer == null) return null
 
@@ -117,7 +112,6 @@ export function initGLData(gl: WebGL2RenderingContext): GLData | null {
   }
 
   return {
-    texture,
     textureCoordBuffer,
     positionBuffer,
     indexBuffer,
@@ -126,13 +120,23 @@ export function initGLData(gl: WebGL2RenderingContext): GLData | null {
 }
 
 export function uploadTexture(gl: WebGL2RenderingContext, source: TexImageSource, texture: WebGLTexture) {
-    gl.bindTexture(gl.TEXTURE_2D, texture)
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, source)
+  gl.bindTexture(gl.TEXTURE_2D, texture)
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, source)
 
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+}
+
+export function uploadSubTexture(
+  gl: WebGL2RenderingContext,
+  source: TexImageSource,
+  texture: WebGLTexture,
+  position: Point,
+) {
+  gl.bindTexture(gl.TEXTURE_2D, texture)
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, position.x, position.y, gl.RGB, gl.UNSIGNED_BYTE, source)
 }
 
 export interface Texture {
@@ -147,8 +151,22 @@ export interface DrawParams {
   vertexCount: number
 }
 
-export function updateBuffers(gl: WebGLRenderingContext, glData: GLData, drawCommands: GraphicsDrawCommand[]): DrawParams[] {
+export function updateBuffers(
+  gl: WebGLRenderingContext,
+  glData: GLData,
+  drawCommands: GraphicsDrawCommand[],
+): DrawParams[] {
   const clockBufferGen = measureTimeCallback('buffer gen', 1)
+
+  // DEBUG: remove this later
+  if (drawCommands.length === 0) return []
+
+  const texture = drawCommands[0].texture
+  drawCommands.push({
+    texture,
+    src: new Rectangle(0, 0, texture.width, texture.height),
+    dst: new Rectangle(-texture.width, 0, texture.width, texture.height),
+  })
 
   // update coordinates
   const textureCoordBuf: number[] = []
@@ -164,25 +182,21 @@ export function updateBuffers(gl: WebGLRenderingContext, glData: GLData, drawCom
   }
 
   const drawParams: DrawParams[] = []
-  for (const [texture, cmds] of cmdsByTexture.entries()) {
+  for (const texture of cmdsByTexture.keys()) {
+    const cmds = cmdsByTexture.get(texture)!
     drawParams.push({
       texture,
-      offset: textureCoordBuf.length / 8,
-      vertexCount: cmds.length * 4
+      offset: i / 4,
+      vertexCount: cmds.length * 6,
     })
 
     for (const cmd of cmds) {
       // append texture coordinates
-      const m = {
-        x: cmd.src.x,
-        y: texture.height - cmd.src.y,
-        w: cmd.src.w,
-        h: cmd.src.h,
-      }
+      const m = cmd.src
       const c = [
         m.y / texture.height, // T
         m.x / texture.width, // L
-        (m.y - m.h) / texture.height, // B
+        (m.y + m.h) / texture.height, // B
         (m.x + m.w) / texture.width, // R
       ]
       const coords = [
@@ -217,7 +231,7 @@ export function updateBuffers(gl: WebGLRenderingContext, glData: GLData, drawCom
       positionBuf.push(...positions)
 
       // append indices
-      const indices = [i + 0, i + 1, i + 2, i + 1, i + 2, i + 3]
+      const indices = [i + 0, i + 1, i + 2, i + 3, i + 2, i + 1]
       indexBuf.push(...indices)
       i += 4
     }
@@ -238,16 +252,26 @@ export function updateBuffers(gl: WebGLRenderingContext, glData: GLData, drawCom
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, glData.indexBuffer)
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indexBuf), gl.STATIC_DRAW)
   })
+  console.log(
+    `uploaded ${drawCommands.length} cmd ${textureCoordBuf.length} texcoord ${positionBuf.length} pos ${indexBuf.length} idx`,
+  )
+  console.log('params', drawParams)
 
   return drawParams
 }
 
-export function draw(gl: WebGL2RenderingContext, glData: GLData, drawParams: DrawParams[], canvas: HTMLCanvasElement, viewport: Rectangle) {
+export function draw(
+  gl: WebGL2RenderingContext,
+  glData: GLData,
+  drawParams: DrawParams[],
+  canvas: HTMLCanvasElement,
+  viewport: Rectangle,
+) {
   const clockDraw = measureTimeCallback('draw', 1)
 
   gl.viewport(0, 0, canvas.width, canvas.height)
 
-  gl.clearColor(0.0, 0.0, 0.0, 1.0)
+  gl.clearColor(1.0, 1.0, 1.0, 1.0)
   gl.clearDepth(1.0)
 
   gl.enable(gl.DEPTH_TEST) // Enable depth testing
@@ -318,7 +342,7 @@ export function draw(gl: WebGL2RenderingContext, glData: GLData, drawParams: Dra
     }
 
     {
-      gl.drawElements(gl.TRIANGLES, 6 * vertexCount, gl.UNSIGNED_SHORT, offset * 6 * 2)
+      gl.drawElements(gl.TRIANGLES, vertexCount, gl.UNSIGNED_SHORT, offset * 6 * 2)
     }
   }
 

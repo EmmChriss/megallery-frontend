@@ -1,6 +1,4 @@
-import { decode as decodePng, DecodedPng } from 'fast-png'
 import { decode as decodeMsgPack } from '@msgpack/msgpack'
-import * as msgpackr from "msgpackr"
 import { measureTime, measureTimeCallback } from './util'
 
 export type ApiError = 'FAILED'
@@ -113,19 +111,16 @@ export function getImageDataByIds(req: ApiImageDataRequestV2[]): Promise<(ImageB
       })
       .then(async buf => {
         responseClock()
-        if (!buf)
-          throw new Error()
+        if (!buf) throw new Error()
 
-        const decodedResponse = measureTime("decode response", 1, () => decodeMsgPack(buf)) as (Uint8Array | null)[]
+        const decodedResponse = measureTime('decode response', 1, () => decodeMsgPack(buf)) as (Uint8Array | null)[]
 
-        return await Promise.all(decodedResponse
-          .map(async buf => {
-            if (!buf)
-              return
+        return await Promise.all(
+          decodedResponse.map(async buf => {
+            if (!buf) return
 
-            console.log("imaging")
             return await createImageBitmap(new Blob([buf]))
-          })
+          }),
         )
       })
       .then(resolve)

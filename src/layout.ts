@@ -1,5 +1,5 @@
 import { ApiImage } from './api'
-import { DrawCommand } from './graphics'
+import { DrawCommand } from './store'
 
 export type Layout<T> = (metadata: T[]) => DrawCommand[]
 

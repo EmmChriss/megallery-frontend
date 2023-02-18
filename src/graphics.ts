@@ -1,8 +1,6 @@
 import { Dispatch, SetStateAction, useEffect, useMemo, useRef, useState } from 'react'
-import { ApiImageAtlasMapping } from './api'
-import { GLData, Texture, initGLData, uploadTexture } from './gl'
+import { GLData, Texture, initGLData, updateBuffers, draw, DrawParams } from './gl'
 import { Rectangle } from './types'
-import { measureTime, measureTimeCallback } from './util'
 
 // TODO: fix rescaling on resize
 export function useViewport(): [Rectangle, Dispatch<SetStateAction<Rectangle>>] {
@@ -34,24 +32,28 @@ export function useViewport(): [Rectangle, Dispatch<SetStateAction<Rectangle>>] 
   return [viewport, setViewport]
 }
 
-export interface TextureAtlas {
-  mapping: ApiImageAtlasMapping[]
-  width: number
-  height: number
+export interface GLContext {
+  canvas: HTMLCanvasElement
+  gl: WebGL2RenderingContext
+  glData: GLData
 }
 
-interface InternalTextureAtlas {
-  mapping: Map<string, ApiImageAtlasMapping>
-  width: number
-  height: number
-}
+export function useGLContext(canvas: HTMLCanvasElement | null): GLContext | undefined {
+  return useMemo(() => {
+    if (canvas == null) return
 
-export interface DrawCommand {
-  id: string
-  x: number
-  y: number
-  w: number
-  h: number
+    const gl = canvas.getContext('webgl2')
+    if (gl == null) throw Error('Your browser is not supported')
+
+    const glData = initGLData(gl)
+    if (glData == null) throw Error('Could not initialize OpenGL buffers')
+
+    return {
+      gl,
+      canvas,
+      glData,
+    }
+  }, [canvas])
 }
 
 export interface GraphicsDrawCommand {
@@ -61,49 +63,21 @@ export interface GraphicsDrawCommand {
 }
 
 export function useGraphics(
-  canvas: HTMLCanvasElement | null,
-  drawCommands: DrawCommand[],
+  glContext: GLContext | undefined,
+  drawCommands: GraphicsDrawCommand[],
   viewport: Rectangle,
-): {
-  gl: WebGL2RenderingContext | null
-  glData: GLData | null
-  loadTexture: (source: TexImageSource, atlas: TextureAtlas) => void
-} {
-  const [gl, glData] = useMemo(() => {
-    if (canvas == null) return [null, null]
+) {
+  const [drawParams, setDrawParams] = useState<DrawParams[]>([])
 
-    const gl = canvas.getContext('webgl2')
-    if (gl == null)
-      throw Error('Your browser is not supported')
+  useEffect(() => {
+    if (!glContext) return
 
-    return [gl, initGLData(gl)]
-  }, [canvas])
+    setDrawParams(updateBuffers(glContext.gl, glContext.glData, drawCommands))
+  }, [drawCommands, glContext])
 
-  const vertexCount = useRef<number>(0)
+  useEffect(() => {
+    if (!glContext) return
 
-  const [textureAtlas, setTextureAtlas] = useState<InternalTextureAtlas>()
-
-  function loadTexture(source: TexImageSource, atlas: TextureAtlas) {
-    if (gl == null || glData == null) return
-
-    uploadTexture(gl, source, glData.texture)
-
-    // build id->mapping structure
-    const mapping: Map<string, ApiImageAtlasMapping> = new Map()
-    for (const m of atlas.mapping) {
-      mapping.set(m.id, m)
-    }
-
-    setTextureAtlas({
-      mapping,
-      width: atlas.width,
-      height: atlas.height,
-    })
-  }
-
-  // useEffect(updateBuffers, [gl, glData, textureAtlas, drawCommands])
-
-  // useEffect(draw, [draw, gl, glData, viewport, canvas?.width, canvas?.height, drawCommands])
-
-  return { gl, glData, loadTexture }
+    draw(glContext.gl, glContext.glData, drawParams, glContext.canvas, viewport)
+  }, [glContext, viewport, glContext?.canvas?.width, glContext?.canvas?.height, drawCommands])
 }
