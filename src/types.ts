@@ -53,7 +53,10 @@ export class Rectangle {
 
   intersects(other: Rectangle): boolean {
     return (
-      this.x < other.x + other.w && this.x + this.w > other.x && this.y < other.y + other.h && this.y + this.h > other.y
+      this.x < other.x + other.w &&
+      this.x + this.w > other.x &&
+      this.y < other.y + other.h &&
+      this.y + this.h > other.y
     )
   }
 }

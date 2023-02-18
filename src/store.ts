@@ -73,7 +73,11 @@ const queryAtlas = async (glContext: GLContext, drawCommands: DrawCommand[]) => 
 
   // TODO: handle errors
   const texture = glContext.gl.createTexture()!
-  const phantom_data = measureTime('generating phantom data', 1, () => new ImageData(buf_width, buf_height))
+  const phantom_data = measureTime(
+    'generating phantom data',
+    1,
+    () => new ImageData(buf_width, buf_height),
+  )
   uploadTexture(glContext.gl, phantom_data, texture)
 
   for (const id of atlas_mapping.keys()) {
@@ -109,7 +113,11 @@ export function useTextureStore(
     [glContext, useEq(setOfIds, (s1, s2) => [...s1.keys()].every(k => s2.has(k)))],
   )
 
-  const visible = useThrottledMemo(() => drawCommands.filter(dc => viewport.intersects(dc.dst)), [viewport], 1000)
+  const visible = useThrottledMemo(
+    () => drawCommands.filter(dc => viewport.intersects(dc.dst)),
+    [viewport],
+    1000,
+  )
 
   useEffect(() => {
     if (!baseAtlas) return

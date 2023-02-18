@@ -95,7 +95,9 @@ export interface ApiImageDataRequestV2 {
   max_height: number
 }
 
-export function getImageDataByIds(req: ApiImageDataRequestV2[]): Promise<(ImageBitmap | undefined)[]> {
+export function getImageDataByIds(
+  req: ApiImageDataRequestV2[],
+): Promise<(ImageBitmap | undefined)[]> {
   const request = new Request(`${BASE_URL}/images/data_new`, {
     method: 'POST',
     body: JSON.stringify(req),
@@ -113,7 +115,9 @@ export function getImageDataByIds(req: ApiImageDataRequestV2[]): Promise<(ImageB
         responseClock()
         if (!buf) throw new Error()
 
-        const decodedResponse = measureTime('decode response', 1, () => decodeMsgPack(buf)) as (Uint8Array | null)[]
+        const decodedResponse = measureTime('decode response', 1, () =>
+          decodeMsgPack(buf),
+        ) as (Uint8Array | null)[]
 
         return await Promise.all(
           decodedResponse.map(async buf => {

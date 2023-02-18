@@ -119,7 +119,11 @@ export function initGLData(gl: WebGL2RenderingContext): GLData | null {
   }
 }
 
-export function uploadTexture(gl: WebGL2RenderingContext, source: TexImageSource, texture: WebGLTexture) {
+export function uploadTexture(
+  gl: WebGL2RenderingContext,
+  source: TexImageSource,
+  texture: WebGLTexture,
+) {
   gl.bindTexture(gl.TEXTURE_2D, texture)
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, source)
 
@@ -275,7 +279,15 @@ export function draw(
 
   const center = viewport.getCenter()
 
-  mat4.ortho(transformMatrix, -viewport.w / 2, viewport.w / 2, -viewport.h / 2, viewport.h / 2, zNear, zFar)
+  mat4.ortho(
+    transformMatrix,
+    -viewport.w / 2,
+    viewport.w / 2,
+    -viewport.h / 2,
+    viewport.h / 2,
+    zNear,
+    zFar,
+  )
   mat4.translate(transformMatrix, transformMatrix, [-center.x, -center.y, -10])
 
   for (const { texture, offset, vertexCount } of drawParams) {
@@ -308,7 +320,14 @@ export function draw(
       const normalize = false // don't normalize
       const stride = 0 // how many bytes to get from one set to the next
       gl.bindBuffer(gl.ARRAY_BUFFER, glData.textureCoordBuffer)
-      gl.vertexAttribPointer(glData.programData.attributes.aTextureCoord, num, type, normalize, stride, offset * 8 * 4)
+      gl.vertexAttribPointer(
+        glData.programData.attributes.aTextureCoord,
+        num,
+        type,
+        normalize,
+        stride,
+        offset * 8 * 4,
+      )
       gl.enableVertexAttribArray(glData.programData.attributes.aTextureCoord)
     }
 

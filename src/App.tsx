@@ -9,7 +9,10 @@ import { measureTimeAsync, useQuery } from './util'
 const App = () => {
   const ref = useRef<HTMLCanvasElement>(null)
 
-  const [metadata] = useQuery(() => measureTimeAsync('fetching metadata', 1, getImageMetadata()), [])
+  const [metadata] = useQuery(
+    () => measureTimeAsync('fetching metadata', 1, getImageMetadata()),
+    [],
+  )
   const [viewport, setViewport] = useViewport()
   const layout = useMemo(() => createGridLayout(metadata), [metadata])
   const glContext = useGLContext(ref.current)

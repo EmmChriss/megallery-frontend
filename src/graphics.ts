@@ -5,7 +5,9 @@ import { Rectangle } from './types'
 // TODO: fix rescaling on resize
 export function useViewport(): [Rectangle, Dispatch<SetStateAction<Rectangle>>] {
   const size = useRef([window.innerWidth, window.innerHeight])
-  const [viewport, setViewport] = useState<Rectangle>(new Rectangle(0, 0, window.innerWidth, window.innerHeight))
+  const [viewport, setViewport] = useState<Rectangle>(
+    new Rectangle(0, 0, window.innerWidth, window.innerHeight),
+  )
 
   useEffect(() => {
     const updateSize = () => {
