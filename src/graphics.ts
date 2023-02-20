@@ -1,37 +1,38 @@
-import { Dispatch, SetStateAction, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { GLData, Texture, initGLData, updateBuffers, draw, DrawParams } from './gl'
 import { Rectangle } from './types'
 
-// TODO: fix rescaling on resize
-export function useViewport(): [Rectangle, Dispatch<SetStateAction<Rectangle>>] {
-  const size = useRef([window.innerWidth, window.innerHeight])
+export const useViewport = (canvas: HTMLCanvasElement | null) => {
+  const screen: React.MutableRefObject<[number, number]> = useRef([
+    window.innerWidth,
+    window.innerHeight,
+  ])
   const [viewport, setViewport] = useState<Rectangle>(
-    new Rectangle(0, 0, window.innerWidth, window.innerHeight),
+    new Rectangle(0, 0, screen.current[0], screen.current[1]),
   )
 
   useEffect(() => {
+    if (!canvas) return
+
     const updateSize = () => {
-      setViewport(viewport => {
-        const { innerWidth, innerHeight } = window
-        const [width, height] = size.current
+      const [prevWidth, prevHeight] = screen.current
+      const { width, height } = canvas.getBoundingClientRect()
+      screen.current = [width, height]
 
-        if (width === innerWidth && height === innerHeight) return viewport
-
-        size.current = [innerWidth, innerHeight]
-
-        return Rectangle.fromCenter(
+      setViewport(viewport =>
+        Rectangle.fromCenter(
           viewport.getCenter(),
-          (viewport.w * window.innerWidth) / width,
-          (viewport.h * window.innerHeight) / height,
-        )
-      })
+          (viewport.w * width) / prevWidth,
+          (viewport.h * height) / prevHeight,
+        ),
+      )
     }
 
     window.addEventListener('resize', updateSize)
     return () => window.removeEventListener('resize', updateSize)
-  }, [])
+  }, [canvas])
 
-  return [viewport, setViewport]
+  return { viewport, setViewport, screen: screen.current }
 }
 
 export interface GLContext {
