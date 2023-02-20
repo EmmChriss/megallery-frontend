@@ -9,16 +9,18 @@ import { measureTimeAsync, useQuery } from './util'
 const App = () => {
   const ref = useRef<HTMLCanvasElement>(null)
 
+  const { viewport, setViewport, screen } = useViewport(ref.current)
+  useKeyboardMovement(setViewport)
+
   const [metadata] = useQuery(
     () => measureTimeAsync('fetching metadata', 1, getImageMetadata()),
     [],
   )
-  const [viewport, setViewport] = useViewport()
-  const layout = useMemo(() => createGridLayout(metadata), [metadata])
+
   const glContext = useGLContext(ref.current)
-  const graphicsDrawCommands = useTextureStore(glContext, viewport, layout)
+  const layout = useMemo(() => createGridLayout(metadata), [metadata])
+  const graphicsDrawCommands = useTextureStore(glContext, viewport, layout, metadata)
   useGraphics(glContext, graphicsDrawCommands, viewport)
-  useKeyboardMovement(setViewport)
 
   return <canvas ref={ref} width={window.innerWidth} height={window.innerHeight} />
 }
