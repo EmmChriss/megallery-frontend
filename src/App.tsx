@@ -1,26 +1,38 @@
 import React, { useRef, useMemo } from 'react'
-import { getImageMetadata } from './api'
+import { ApiImage, getImageMetadata } from './api'
 import { useGLContext, useGraphics, useViewport } from './graphics'
-import { createGridLayout } from './layout'
-import { useKeyboardMovement } from './movement'
+import { createGridLayout, createLineLayout, Layout, useLayout } from './layout'
+import { useKeyboardLayoutSwitcher, useKeyboardMovement } from './movement'
 import { useTextureStore } from './store'
 import { measureTimeAsync, useQuery } from './util'
 
 const App = () => {
   const ref = useRef<HTMLCanvasElement>(null)
 
-  const { viewport, setViewport, screen } = useViewport(ref.current)
-  useKeyboardMovement(setViewport)
+  const viewport = useViewport(ref.current)
+  useKeyboardMovement(viewport.setViewport)
 
   const [metadata] = useQuery(
     () => measureTimeAsync('fetching metadata', 1, getImageMetadata()),
     [],
   )
-
   const glContext = useGLContext(ref.current)
-  const layout = useMemo(() => createGridLayout(metadata), [metadata])
-  const graphicsDrawCommands = useTextureStore(glContext, viewport, layout, metadata)
-  useGraphics(glContext, graphicsDrawCommands, viewport)
+  const [drawCommands, setLayout] = useLayout(metadata)
+
+  const layouts: Layout<ApiImage>[] = useMemo(
+    () => [
+      m => createGridLayout(m, undefined),
+      m => createLineLayout(m, { direction: 'vertical' }),
+      m => createLineLayout(m, { direction: 'horizontal' }),
+    ],
+    [],
+  )
+
+  useKeyboardLayoutSwitcher(setLayout, layouts)
+
+  const graphicsDrawCommands = useTextureStore(glContext, viewport, drawCommands, metadata)
+
+  useGraphics(glContext, graphicsDrawCommands, viewport.viewport)
 
   return <canvas ref={ref} width={window.innerWidth} height={window.innerHeight} />
 }

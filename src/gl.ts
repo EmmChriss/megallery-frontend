@@ -1,7 +1,7 @@
 import { mat4 } from 'gl-matrix'
 import { GraphicsDrawCommand } from './graphics'
 import { Point, Rectangle } from './types'
-import { measureTime, measureTimeCallback } from './util'
+import { measureTimeCallback } from './util'
 
 // Vertex shader program
 const vsSource = `
@@ -60,24 +60,7 @@ function loadShader(gl: WebGLRenderingContext, type: number, source: string) {
   return shader
 }
 
-export interface GLData {
-  textureCoordBuffer: WebGLBuffer
-  positionBuffer: WebGLBuffer
-  indexBuffer: WebGLBuffer
-
-  programData: ProgramData
-}
-
-export function initGLData(gl: WebGL2RenderingContext): GLData | null {
-  const textureCoordBuffer = gl.createBuffer()
-  if (textureCoordBuffer == null) return null
-
-  const positionBuffer = gl.createBuffer()
-  if (positionBuffer == null) return null
-
-  const indexBuffer = gl.createBuffer()
-  if (indexBuffer == null) return null
-
+export function initProgram(gl: WebGL2RenderingContext): ProgramData | null {
   const vs = loadShader(gl, gl.VERTEX_SHADER, vsSource)
   if (vs == null) return null
 
@@ -111,12 +94,55 @@ export function initGLData(gl: WebGL2RenderingContext): GLData | null {
     uniforms: { uTransformMatrix, uSampler },
   }
 
+  return programData
+}
+
+export interface Texture {
+  texture: WebGLTexture
+  width: number
+  height: number
+
+  textureCoordBuffer: WebGLBuffer
+  positionBuffer: WebGLBuffer
+  indexBuffer: WebGLBuffer
+
+  instances: { src: Rectangle; dst: Rectangle }[]
+}
+
+export function createTexture(gl: WebGL2RenderingContext): Texture | null {
+  const texture = gl.createTexture()
+  if (texture == null) return null
+
+  const textureCoordBuffer = gl.createBuffer()
+  if (textureCoordBuffer == null) return null
+
+  const positionBuffer = gl.createBuffer()
+  if (positionBuffer == null) return null
+
+  const indexBuffer = gl.createBuffer()
+  if (indexBuffer == null) return null
+
   return {
+    texture,
+    width: 0,
+    height: 0,
     textureCoordBuffer,
     positionBuffer,
     indexBuffer,
-    programData,
+    instances: [],
   }
+}
+
+export function clearTexture(
+  gl: WebGL2RenderingContext,
+  texture: Texture,
+  width: number,
+  height: number,
+) {
+  uploadTexture(gl, new ImageData(width, height), texture.texture)
+
+  texture.width = width
+  texture.height = height
 }
 
 export function uploadTexture(
@@ -143,30 +169,11 @@ export function uploadSubTexture(
   gl.texSubImage2D(gl.TEXTURE_2D, 0, position.x, position.y, gl.RGB, gl.UNSIGNED_BYTE, source)
 }
 
-export interface Texture {
-  texture: WebGLTexture
-  width: number
-  height: number
-}
-
-export interface DrawParams {
-  texture: Texture
-  offset: number
-  vertexCount: number
-}
-
 export function updateBuffers(
   gl: WebGLRenderingContext,
-  glData: GLData,
   drawCommands: GraphicsDrawCommand[],
-): DrawParams[] {
+): Texture[] {
   const clockBufferGen = measureTimeCallback('buffer gen', 1)
-
-  // update coordinates
-  const textureCoordBuf: number[] = []
-  const positionBuf: number[] = []
-  const indexBuf: number[] = []
-  var i = 0
 
   const cmdsByTexture: Map<Texture, GraphicsDrawCommand[]> = new Map()
   for (const cmd of drawCommands) {
@@ -175,16 +182,35 @@ export function updateBuffers(
     cmdsByTexture.set(cmd.texture, cmds)
   }
 
-  const drawParams: DrawParams[] = []
   for (const texture of cmdsByTexture.keys()) {
-    const cmds = cmdsByTexture.get(texture)!
-    drawParams.push({
-      texture,
-      offset: i / 4,
-      vertexCount: cmds.length * 6,
-    })
+    const textureCoordBuf: number[] = []
+    const positionBuf: number[] = []
+    const indexBuf: number[] = []
+    var i = 0
 
-    for (const cmd of cmds) {
+    // TODO: compare previous and current instances to not draw when not necessary
+    const newInstances = cmdsByTexture
+      .get(texture)!
+      .map(cmd => Object.assign({ src: cmd.src, dst: cmd.dst }))
+
+    let isEq = true
+    if (texture.instances.length != newInstances.length) isEq = false
+    if (isEq)
+      for (let idx = 0; idx < texture.instances.length; idx += 1) {
+        const a = texture.instances[idx]
+        const b = newInstances[idx]
+
+        if (a.src != b.src || a.dst != b.dst) {
+          isEq = false
+          break
+        }
+      }
+
+    if (isEq) continue
+
+    texture.instances = newInstances
+
+    for (const cmd of cmdsByTexture.get(texture)!) {
       // append texture coordinates
       const m = cmd.src
       const c = [
@@ -229,34 +255,29 @@ export function updateBuffers(
       indexBuf.push(...indices)
       i += 4
     }
+
+    // upload texture coordinates
+    gl.bindBuffer(gl.ARRAY_BUFFER, texture.textureCoordBuffer)
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(textureCoordBuf), gl.STATIC_DRAW)
+
+    // upload position coordinates
+    gl.bindBuffer(gl.ARRAY_BUFFER, texture.positionBuffer)
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positionBuf), gl.STATIC_DRAW)
+
+    // upload indices
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, texture.indexBuffer)
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indexBuf), gl.STATIC_DRAW)
   }
 
   clockBufferGen()
 
-  measureTime('buffer upload', 1, () => {
-    // upload texture coordinates
-    gl.bindBuffer(gl.ARRAY_BUFFER, glData.textureCoordBuffer)
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(textureCoordBuf), gl.STATIC_DRAW)
-
-    // upload position coordinates
-    gl.bindBuffer(gl.ARRAY_BUFFER, glData.positionBuffer)
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positionBuf), gl.STATIC_DRAW)
-
-    // upload indices
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, glData.indexBuffer)
-    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indexBuf), gl.STATIC_DRAW)
-  })
-  console.log(
-    `uploaded ${drawCommands.length} cmd ${textureCoordBuf.length} texcoord ${positionBuf.length} pos ${indexBuf.length} idx`,
-  )
-
-  return drawParams
+  return [...cmdsByTexture.keys()]
 }
 
 export function draw(
   gl: WebGL2RenderingContext,
-  glData: GLData,
-  drawParams: DrawParams[],
+  programData: ProgramData,
+  textures: Texture[],
   canvas: HTMLCanvasElement,
   viewport: Rectangle,
 ) {
@@ -290,7 +311,7 @@ export function draw(
   )
   mat4.translate(transformMatrix, transformMatrix, [-center.x, -center.y, -10])
 
-  for (const { texture, offset, vertexCount } of drawParams) {
+  for (const texture of textures) {
     // eslint-disable-next-line
     {
       // Tell WebGL how to pull out the positions from the position
@@ -300,16 +321,16 @@ export function draw(
       const normalize = false // don't normalize
       const stride = 0 // how many bytes to get from one set of values to the next
       // 0 = use type and numComponents above
-      gl.bindBuffer(gl.ARRAY_BUFFER, glData.positionBuffer)
+      gl.bindBuffer(gl.ARRAY_BUFFER, texture.positionBuffer)
       gl.vertexAttribPointer(
-        glData.programData.attributes.aVertexPosition,
+        programData.attributes.aVertexPosition,
         numComponents,
         type,
         normalize,
         stride,
-        offset * 8 * 4,
+        0,
       )
-      gl.enableVertexAttribArray(glData.programData.attributes.aVertexPosition)
+      gl.enableVertexAttribArray(programData.attributes.aVertexPosition)
     }
 
     // eslint-disable-next-line
@@ -319,26 +340,19 @@ export function draw(
       const type = gl.FLOAT // the data in the buffer is 32-bit float
       const normalize = false // don't normalize
       const stride = 0 // how many bytes to get from one set to the next
-      gl.bindBuffer(gl.ARRAY_BUFFER, glData.textureCoordBuffer)
-      gl.vertexAttribPointer(
-        glData.programData.attributes.aTextureCoord,
-        num,
-        type,
-        normalize,
-        stride,
-        offset * 8 * 4,
-      )
-      gl.enableVertexAttribArray(glData.programData.attributes.aTextureCoord)
+      gl.bindBuffer(gl.ARRAY_BUFFER, texture.textureCoordBuffer)
+      gl.vertexAttribPointer(programData.attributes.aTextureCoord, num, type, normalize, stride, 0)
+      gl.enableVertexAttribArray(programData.attributes.aTextureCoord)
     }
 
     // Tell WebGL which indices to use to index the vertices
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, glData.indexBuffer)
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, texture.indexBuffer)
 
     // Tell WebGL to use our program when drawing
-    gl.useProgram(glData.programData.program)
+    gl.useProgram(programData.program)
 
     // Set the shader uniforms
-    gl.uniformMatrix4fv(glData.programData.uniforms.uTransformMatrix, false, transformMatrix)
+    gl.uniformMatrix4fv(programData.uniforms.uTransformMatrix, false, transformMatrix)
 
     // eslint-disable-next-line
     {
@@ -349,12 +363,12 @@ export function draw(
       gl.bindTexture(gl.TEXTURE_2D, texture.texture)
 
       // Tell the shader we bound the texture to texture unit 0
-      gl.uniform1i(glData.programData.uniforms.uSampler, 0)
+      gl.uniform1i(programData.uniforms.uSampler, 0)
     }
 
     // eslint-disable-next-line
     {
-      gl.drawElements(gl.TRIANGLES, vertexCount, gl.UNSIGNED_SHORT, offset * 6 * 2)
+      gl.drawElements(gl.TRIANGLES, texture.instances.length * 6, gl.UNSIGNED_SHORT, 0)
     }
   }
 

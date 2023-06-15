@@ -1,4 +1,6 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
+import { ApiImage } from './api'
+import { Layout } from './layout'
 import { Rectangle } from './types'
 
 const MOVE_INTERVAL_MS = 5
@@ -54,6 +56,39 @@ export function useKeyboardMovement(setViewport: React.Dispatch<React.SetStateAc
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('keyup', onKeyUp)
       clearInterval(moveTimer)
+    }
+  }, [])
+}
+
+export function useKeyboardLayoutSwitcher(
+  setLayout: React.Dispatch<React.SetStateAction<Layout<ApiImage> | undefined>>,
+  layouts: Layout<ApiImage>[],
+) {
+  const [idx, setIdx] = useState(0)
+
+  useEffect(() => setIdx(0), [layouts])
+  useEffect(() => setLayout(() => layouts[idx]), [idx])
+
+  useEffect(() => {
+    const onKeyDown = (ev: KeyboardEvent) => {
+      if (ev.key == 'f') {
+        const newIdx = (idx - 1 + layouts.length) % layouts.length
+        setIdx(newIdx)
+      }
+      if (ev.key == 'g') {
+        setIdx((idx + 1) % layouts.length)
+      }
+
+      const num = Number.parseInt(ev.key)
+      if (!Number.isNaN(num) && num >= 0 && num < layouts.length) {
+        setIdx(num)
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
     }
   }, [])
 }

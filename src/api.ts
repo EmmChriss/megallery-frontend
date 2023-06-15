@@ -1,5 +1,6 @@
 import { decode as decodeMsgPack } from '@msgpack/msgpack'
-import { measureTime, measureTimeCallback } from './util'
+import { measureTime, measureTimeAsync, measureTimeCallback } from './util'
+import { WORKER } from './decodeWorker'
 
 export type ApiError = 'FAILED'
 
@@ -89,15 +90,15 @@ export function getImageData(req: ApiImageDataRequest): Promise<ApiImageData> {
   })
 }
 
-export interface ApiImageDataRequestV2 {
+export interface ApiImageDataRequestV2Entry {
   id: string
   max_width: number
   max_height: number
 }
 
 export function getImageDataByIds(
-  req: ApiImageDataRequestV2[],
-): Promise<(ImageBitmap | undefined)[]> {
+  req: ApiImageDataRequestV2Entry[],
+): Promise<(ImageBitmap | null)[]> {
   const request = new Request(`${BASE_URL}/images/data_new`, {
     method: 'POST',
     body: JSON.stringify(req),
@@ -113,19 +114,25 @@ export function getImageDataByIds(
       })
       .then(async buf => {
         responseClock()
-        if (!buf) throw new Error()
+        if (!buf) return []
 
-        const decodedResponse = measureTime('decode response', 1, () =>
-          decodeMsgPack(buf),
-        ) as (Uint8Array | null)[]
+        const decodedMsg = decodeMsgPack(buf) as (Uint8Array | null)[]
 
-        return await Promise.all(
-          decodedResponse.map(async buf => {
-            if (!buf) return
+        // const blobs = decodedMsg.map(b => b && new Blob([b]))
 
-            return await createImageBitmap(new Blob([buf]))
-          }),
+        // const decodeWorker = new Worker(WORKER)
+        // decodeWorker.postMessage(blobs)
+        // return new Promise<(ImageBitmap | null)[]>((resolve) => {
+        //   decodeWorker.onmessage = (msg: MessageEvent<(ImageBitmap | null)[]>) => resolve(msg.data)
+        // })
+
+        const decodedImages = await measureTimeAsync(
+          'decoding images',
+          0,
+          Promise.all(decodedMsg.map(buf => buf && createImageBitmap(new Blob([buf])))),
         )
+
+        return decodedImages
       })
       .then(resolve)
       .catch(reject)

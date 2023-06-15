@@ -12,6 +12,10 @@ export class Point {
   translate(x: number, y: number) {
     return new Point(this.x + x, this.y + y)
   }
+
+  scale(x: number, y: number) {
+    return new Point(this.x * x, this.y * y)
+  }
 }
 
 export class Rectangle {
@@ -34,17 +38,25 @@ export class Rectangle {
     return new Rectangle(center.x - w / 2, center.y - h / 2, w, h)
   }
 
-  static fromOppositeCorners(topLeft: Point, bottomRight: Point): Rectangle {
+  static fromOppositeCorners(basePoint: Point, offsetPoint: Point): Rectangle {
     return new Rectangle(
-      Math.min(topLeft.x, bottomRight.x),
-      Math.min(topLeft.y, bottomRight.y),
-      Math.abs(topLeft.x - bottomRight.x),
-      Math.abs(topLeft.y - bottomRight.y),
+      Math.min(basePoint.x, offsetPoint.x),
+      Math.min(basePoint.y, offsetPoint.y),
+      Math.abs(basePoint.x - offsetPoint.x),
+      Math.abs(basePoint.y - offsetPoint.y),
     )
   }
 
   getCenter(): Point {
     return new Point(this.x + this.w / 2, this.y + this.h / 2)
+  }
+
+  getBasePoint(): Point {
+    return new Point(this.x, this.y)
+  }
+
+  getOffsetPoint(): Point {
+    return new Point(this.x + this.w, this.y + this.h)
   }
 
   scale(scaleX: number, scaleY: number): Rectangle {
@@ -57,6 +69,15 @@ export class Rectangle {
       this.x + this.w > other.x &&
       this.y < other.y + other.h &&
       this.y + this.h > other.y
+    )
+  }
+
+  contains(other: Rectangle): boolean {
+    return (
+      this.x < other.x &&
+      this.y < other.y &&
+      this.x + this.w > other.x + other.w &&
+      this.y + this.h > other.y + other.h
     )
   }
 }

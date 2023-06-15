@@ -95,10 +95,13 @@ export function useQuery<T>(
 
 export function useEq<T>(val: T, isEq: (prev: T, current: T) => boolean): T {
   const value = useRef(val)
+  const prevCompare = useRef<T>()
 
-  if (!isEq(value.current, val)) {
+  if (prevCompare.current !== val && !isEq(value.current, val)) {
     value.current = val
   }
+
+  prevCompare.current = val
 
   return value.current
 }
