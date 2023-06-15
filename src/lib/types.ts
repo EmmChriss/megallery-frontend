@@ -23,8 +23,9 @@ export class Rectangle {
   readonly y: number
   readonly w: number
   readonly h: number
+  readonly rot: number
 
-  constructor(x: number, y: number, w: number, h: number) {
+  constructor(x: number, y: number, w: number, h: number, rot: number = 0) {
     assert(w > 0, 'Rectangle width has to be positive')
     assert(h > 0, 'Rectangle height has to be positive')
 
@@ -32,6 +33,7 @@ export class Rectangle {
     this.y = y
     this.w = w
     this.h = h
+    this.rot = rot
   }
 
   static fromCenter(center: Point, w: number, h: number): Rectangle {
@@ -63,6 +65,10 @@ export class Rectangle {
     return new Rectangle(this.x, this.y, this.w * scaleX, this.h * scaleY)
   }
 
+  rotateAroundCenter(rot: number): Rectangle {
+    return new Rectangle(this.x, this.y, this.w, this.h, this.rot + rot)
+  }
+
   intersects(other: Rectangle): boolean {
     return (
       this.x < other.x + other.w &&
@@ -74,10 +80,10 @@ export class Rectangle {
 
   contains(other: Rectangle): boolean {
     return (
-      this.x < other.x &&
-      this.y < other.y &&
-      this.x + this.w > other.x + other.w &&
-      this.y + this.h > other.y + other.h
+      this.x <= other.x &&
+      this.y <= other.y &&
+      this.x + this.w >= other.x + other.w &&
+      this.y + this.h >= other.y + other.h
     )
   }
 }
