@@ -5,8 +5,10 @@ import { GLContext } from './graphics'
 import { Organizer } from './layout'
 import { TextureStore } from './store'
 import { Viewport } from './viewport'
+import { createWorker } from './worker'
 
 interface AppEventMap {
+  'on-after-render': () => void
   'changed-collection': (collection?: ApiCollection) => void
   'changed-images': (images: Map<string, ApiImage>, metadata: Map<string, ImageMetadata>) => void
 }
@@ -24,6 +26,8 @@ export class App extends EventHandler<AppEventMap> {
 
   viewport: Viewport
   glContext: GLContext
+
+  worker = createWorker()
 
   drawCalls: Texture[] = []
 
@@ -116,6 +120,8 @@ export class App extends EventHandler<AppEventMap> {
         this.viewport.rect,
         this.textureStore.visibleTextures,
       )
+
+      this.emitEvent('on-after-render')
     }
   }
 }

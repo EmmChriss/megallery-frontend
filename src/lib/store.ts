@@ -1,8 +1,6 @@
 import { App } from './app'
 import { ApiBulkImageRequestEntry, getStaticAtlas } from './api'
 import { EventHandler } from './eventHandler'
-import { executeJob } from './fetch.types'
-import Worker from './fetch.worker'
 import {
   Texture,
   uploadSubTexture,
@@ -10,6 +8,7 @@ import {
   clearTexture,
   uploadTexture,
   initEmptyTexture,
+  getWebGLTexture,
 } from './gl'
 import { GLContext, GraphicsDrawCommand } from './graphics'
 import { Point, Rectangle } from './types'
@@ -21,7 +20,7 @@ export interface DrawCommand {
   dst: Rectangle
 }
 
-interface TextureAtlas {
+export interface TextureAtlas {
   texture: Texture
   mapping: Map<string, Rectangle>
 }
@@ -39,7 +38,7 @@ interface CollisionGrid {
 
 interface CollisionGridCell {
   rect: Rectangle
-  intersects: DrawCommand[]
+  intersects: GraphicsDrawCommand[]
 }
 
 interface TextureStoreEventMap {
@@ -55,17 +54,17 @@ export class TextureStore extends EventHandler<TextureStoreEventMap> {
 
   isDownloading: boolean = false
   atlases: TextureAtlas[] = []
+  atlasCache = new Map<string, number>()
 
   graphicsDrawCommands: GraphicsDrawCommand[] = []
-  dstToGDC: Map<Rectangle, GraphicsDrawCommand> = new Map()
 
   prevIds = new Set<string>()
   layout: DrawCommand[] = []
 
   collisionGrid?: CollisionGrid
-  visible: DrawCommand[] = []
+  visible: GraphicsDrawCommand[] = []
   updateVisibleThrottle?: number
-  loadVisibleTimer?: number
+  loadVisibleThrottle?: number
 
   visibleTextures: Set<Texture> = new Set()
 
@@ -85,17 +84,29 @@ export class TextureStore extends EventHandler<TextureStoreEventMap> {
         const staticAtlasClock = measureTimeCallback('static atlas', 1)
         const atlases = await this.queryStaticAtlas(glContext)
         this.atlases.push(...atlases)
+
+        // initialize atlas cache
+        for (let i = 0; i < this.atlases.length; i++) {
+          const atlas = this.atlases[i]
+          for (const id of atlas.mapping.keys()) {
+            this.atlasCache.set(id, i)
+          }
+        }
+
         staticAtlasClock()
       }
 
-      measureTime('updating collision grid', 1, () => this.updateCollisionGrid())
-      measureTime('updating draw commands', 1, () => this.updateGraphicsDrawCommands())
+      measureTimeAsync(
+        'updating draw commands',
+        1,
+        async () => await this.updateGraphicsDrawCommands(),
+      )
     })
     app.viewport.addEventListener('move', viewport => {
       const now = performance.now()
-      if (now - (this.updateVisibleThrottle ?? 0) > 50) {
+      if (now - (this.updateVisibleThrottle ?? 0) > 5) {
         this.updateVisibleThrottle = now
-        measureTime('updating visible', 1, () => this.updateVisible(viewport))
+        this.updateVisible(viewport)
       }
     })
     this.addEventListener('changed-atlases', () => {
@@ -103,8 +114,14 @@ export class TextureStore extends EventHandler<TextureStoreEventMap> {
       this.updateVisible(this.viewport)
     })
     this.addEventListener('changed-visible', () => {
-      clearTimeout(this.loadVisibleTimer)
-      this.loadVisibleTimer = setTimeout(() => this.loadVisible(), 200) as unknown as number
+      const now = performance.now()
+      if (now - (this.loadVisibleThrottle ?? 0) > 10) {
+        this.loadVisibleThrottle = now
+        this.loadVisible()
+      }
+    })
+    this.addEventListener('changed-graphics-draw-commands', () => {
+      measureTime('updating collision grid', 1, () => this.updateCollisionGrid())
     })
   }
 
@@ -122,34 +139,23 @@ export class TextureStore extends EventHandler<TextureStoreEventMap> {
       const newAtlas = await measureTimeAsync(
         'building atlas',
         1,
-        this.queryBulkImagesIntoAtlas(this.glContext, req),
+        async () => await this.queryBulkImagesIntoAtlas(this.glContext, req),
       )
 
       if (!newAtlas) continue
 
+      for (const id of newAtlas.mapping.keys()) {
+        this.atlasCache.set(id, this.atlases.length)
+      }
+
       this.atlases.push(newAtlas)
-      this.emitEvent('changed-atlases')
     }
 
+    this.emitEvent('changed-atlases')
     this.isDownloading = false
   }
 
-  protected lookupTexture(id: string) {
-    for (let i = this.atlases.length - 1; i >= 0; i--) {
-      const atlas = this.atlases[i]
-      if (!atlas) continue
-
-      const mapping = atlas.mapping.get(id)
-      if (!mapping) continue
-
-      return {
-        texture: atlas.texture,
-        src: mapping,
-      }
-    }
-  }
-
-  protected updateGraphicsDrawCommands() {
+  protected async updateGraphicsDrawCommands() {
     // const ids = new Set([...this.layout.map(dc => dc.id)])
     // const newIds = [...ids.keys()].filter(k => !this.prevIds.has(k))
 
@@ -166,20 +172,34 @@ export class TextureStore extends EventHandler<TextureStoreEventMap> {
     //   this.loadAtlas(req)
     // }
 
-    this.graphicsDrawCommands = this.layout
-      .map(dc => Object.assign(dc, this.lookupTexture(dc.id)))
-      .filter(dc => dc.texture !== undefined)
+    const lookupTexture = (id: string) => {
+      const atlasIdx = this.atlasCache.get(id)
+      if (atlasIdx === undefined) return
 
-    this.dstToGDC.clear()
-    for (const gdc of this.graphicsDrawCommands) {
-      this.dstToGDC.set(gdc.dst, gdc)
+      const atlas = this.atlases[atlasIdx]
+      if (!atlas) return
+
+      const mapping = atlas.mapping.get(id)
+      if (!mapping) return
+
+      return {
+        texture: atlas.texture,
+        src: mapping,
+      }
     }
 
-    this.emitEvent('changed-graphics-draw-commands', this.graphicsDrawCommands)
+    this.graphicsDrawCommands = this.layout
+      .map(dc => Object.assign(dc, lookupTexture(dc.id)))
+      .filter(dc => dc.texture !== undefined)
+
+    setTimeout(
+      () => this.emitEvent('changed-graphics-draw-commands', this.graphicsDrawCommands),
+      10,
+    )
   }
 
   protected updateCollisionGrid() {
-    const [minX, minY, maxX, maxY] = this.layout.reduce(
+    const [minX, minY, maxX, maxY] = this.graphicsDrawCommands.reduce(
       ([minX, minY, maxX, maxY], c) => [
         Math.min(minX, c.dst.x),
         Math.min(minY, c.dst.y),
@@ -206,12 +226,12 @@ export class TextureStore extends EventHandler<TextureStoreEventMap> {
       cells.push(cellsY)
     }
 
-    for (const dc of this.layout) {
-      const baseX = dc.dst.x - minX
-      const baseY = dc.dst.y - minY
+    for (const gdc of this.graphicsDrawCommands) {
+      const baseX = gdc.dst.x - minX
+      const baseY = gdc.dst.y - minY
 
-      const offsetX = dc.dst.x + dc.dst.w - minX
-      const offsetY = dc.dst.y + dc.dst.h - minY
+      const offsetX = gdc.dst.x + gdc.dst.w - minX
+      const offsetY = gdc.dst.y + gdc.dst.h - minY
 
       const idxBX = Math.floor(baseX / cellW)
       const idxBY = Math.floor(baseY / cellH)
@@ -221,7 +241,7 @@ export class TextureStore extends EventHandler<TextureStoreEventMap> {
 
       for (let x = idxBX; x < idxOX; x++) {
         for (let y = idxBY; y < idxOY; y++) {
-          cells[x][y].intersects.push(dc)
+          cells[x][y].intersects.push(gdc)
         }
       }
     }
@@ -272,11 +292,8 @@ export class TextureStore extends EventHandler<TextureStoreEventMap> {
 
     this.visible = drawCommands
 
-    for (const dc of drawCommands) {
-      const gdc = this.dstToGDC.get(dc.dst)
-      if (gdc) {
-        this.visibleTextures.add(gdc.texture)
-      }
+    for (const gdc of drawCommands) {
+      this.visibleTextures.add(gdc.texture)
     }
 
     this.emitEvent('changed-visible', this.visible)
@@ -317,7 +334,7 @@ export class TextureStore extends EventHandler<TextureStoreEventMap> {
       })
     })
 
-    this.loadAtlas(toLoad)
+    if (toLoad.length > 0) this.loadAtlas(toLoad)
   }
 
   async queryStaticAtlas(glContext: GLContext): Promise<TextureAtlas[]> {
@@ -331,7 +348,7 @@ export class TextureStore extends EventHandler<TextureStoreEventMap> {
 
       texture.width = atlas.width
       texture.height = atlas.height
-      uploadTexture(glContext.gl, atlas, texture.texture)
+      uploadTexture(glContext.gl, atlas, getWebGLTexture(texture))
 
       const atlas_mapping = new Map<string, Rectangle>()
       for (const m of mapping) {
@@ -356,13 +373,8 @@ export class TextureStore extends EventHandler<TextureStoreEventMap> {
       return
     }
 
-    const { atlas_mapping, texture_mapping, buf_width, buf_height } = await executeJob(
-      'apiBulkImageRequest',
-      Worker,
-      [],
-      this.app.collection.id,
-      req,
-    )
+    const { atlas_mapping, texture_mapping, buf_width, buf_height } =
+      await this.app.worker.getBulkImagesAndConstructAtlas(this.app.collection.id, req)
 
     if (buf_width === 0 || buf_height === 0) return
 
@@ -374,42 +386,35 @@ export class TextureStore extends EventHandler<TextureStoreEventMap> {
       clearTexture(glContext.gl, texture)
     })
 
-    measureTime('uploading textures', 0, () => {
-      for (const id of atlas_mapping.keys()) {
-        const mapping = atlas_mapping.get(id)!
-        const image = texture_mapping.get(id)!
+    await measureTimeAsync(
+      'uploading textures',
+      0,
+      async () =>
+        await new Promise(resolve => {
+          const keys = [...atlas_mapping.keys()]
 
-        uploadSubTexture(glContext.gl, image, texture.texture, new Point(mapping.x, mapping.y))
-      }
-    })
+          const onAfterRender = () => {
+            const key = keys.pop()
+            if (key === undefined) {
+              this.app.removeEventListener('on-after-render', onAfterRender)
+              resolve(undefined)
+              return
+            }
 
-    // const canvas = UPLOAD_CANVAS
-    // canvas.width = buf_width
-    // canvas.height = buf_height
+            const mapping = atlas_mapping.get(key)!
+            const image = texture_mapping.get(key)!
 
-    // const ctx = canvas.getContext('2d')
-    // if (!ctx)
-    //   throw new Error("Could not create canvas context")
+            uploadSubTexture(
+              glContext.gl,
+              image,
+              getWebGLTexture(texture),
+              new Point(mapping.x, mapping.y),
+            )
+          }
 
-    // for (const id of atlas_mapping.keys()) {
-    //   const mapping = atlas_mapping.get(id)!
-    //   const image = texture_mapping.get(id)!
-
-    //   ctx.drawImage(image, mapping.x, mapping.y, mapping.w, mapping.h)
-    // }
-
-    // const blob = await new Promise<Blob | null>((resolve, reject) => {
-    //   canvas.toBlob(resolve, 'image/png')
-    // })
-
-    // if (!blob)
-    //   throw new Error()
-
-    // console.log(URL.createObjectURL(blob))
-    // console.log(atlas_mapping)
-
-    // const bitmap = await createImageBitmap(blob)
-    // uploadTexture(glContext.gl, bitmap, texture.texture)
+          this.app.addEventListener('on-after-render', onAfterRender)
+        }),
+    )
 
     return {
       texture,

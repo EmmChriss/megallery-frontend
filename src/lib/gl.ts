@@ -1,7 +1,7 @@
 import { mat4 } from 'gl-matrix'
 import { GraphicsDrawCommand } from './graphics'
 import { Point, Rectangle } from './types'
-import { measureTimeCallback } from './util'
+import { measureTime, measureTimeCallback } from './util'
 
 // Vertex shader program
 const vsSource = `
@@ -97,11 +97,15 @@ export function initProgram(gl: WebGLRenderingContext): ProgramData | null {
   return programData
 }
 
-export interface BufferSet {
+interface BufferSetIntern {
   textureCoordBuffer: WebGLBuffer
   positionBuffer: WebGLBuffer
   indexBuffer: WebGLBuffer
 }
+
+type BufferSet = number
+
+const bufferSetStore = new Array<BufferSetIntern>()
 
 export function createBufferSet(gl: WebGLRenderingContext): BufferSet | null {
   const textureCoordBuffer = gl.createBuffer()
@@ -113,10 +117,15 @@ export function createBufferSet(gl: WebGLRenderingContext): BufferSet | null {
   const indexBuffer = gl.createBuffer()
   if (indexBuffer == null) return null
 
-  return { textureCoordBuffer, positionBuffer, indexBuffer }
+  const idx = bufferSetStore.length
+  bufferSetStore.push({ textureCoordBuffer, positionBuffer, indexBuffer })
+
+  return idx
 }
 
-export function clearBufferSet(gl: WebGLRenderingContext, buffers: BufferSet) {
+export function clearBufferSet(gl: WebGLRenderingContext, buffersIdx: BufferSet) {
+  const buffers = bufferSetStore[buffersIdx]
+
   // upload texture coordinates
   gl.bindBuffer(gl.ARRAY_BUFFER, buffers.textureCoordBuffer)
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([]), gl.STATIC_DRAW)
@@ -131,7 +140,7 @@ export function clearBufferSet(gl: WebGLRenderingContext, buffers: BufferSet) {
 }
 
 export interface Texture {
-  texture: WebGLTexture
+  texture: number
   width: number
   height: number
 
@@ -139,15 +148,24 @@ export interface Texture {
   instances: { src: Rectangle; dst: Rectangle }[]
 }
 
+const textureStore = new Array<WebGLTexture>()
+
+export function getWebGLTexture(texture: Texture): WebGLTexture {
+  return textureStore[texture.texture]
+}
+
 export function createTexture(gl: WebGLRenderingContext): Texture | null {
   const texture = gl.createTexture()
   if (texture == null) return null
 
   const bufferSet = createBufferSet(gl)
-  if (!bufferSet) return null
+  if (bufferSet === null) return null
+
+  const textureIdx = textureStore.length
+  textureStore.push(texture)
 
   return {
-    texture,
+    texture: textureIdx,
     width: 0,
     height: 0,
     buffers: [bufferSet],
@@ -161,7 +179,7 @@ export function initEmptyTexture(
   width: number,
   height: number,
 ) {
-  gl.bindTexture(gl.TEXTURE_2D, texture.texture)
+  gl.bindTexture(gl.TEXTURE_2D, getWebGLTexture(texture))
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null)
 
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
@@ -183,10 +201,16 @@ export function clearTexture(gl: WebGLRenderingContext, texture: Texture) {
     clearFramebufferRef.current = fb
   }
 
-  gl.bindTexture(gl.TEXTURE_2D, texture.texture)
+  gl.bindTexture(gl.TEXTURE_2D, getWebGLTexture(texture))
   gl.bindFramebuffer(gl.FRAMEBUFFER, clearFramebufferRef.current)
 
-  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture.texture, 0)
+  gl.framebufferTexture2D(
+    gl.FRAMEBUFFER,
+    gl.COLOR_ATTACHMENT0,
+    gl.TEXTURE_2D,
+    getWebGLTexture(texture),
+    0,
+  )
   gl.clear(gl.COLOR_BUFFER_BIT)
 
   // unbind everything
@@ -257,104 +281,94 @@ export function updateBuffers(
     if (isEq) continue
     texture.instances = instances
 
-    const textureCoordBuf: number[] = []
-    const positionBuf: number[] = []
-    const indexBuf: number[] = []
+    const cmds = cmdsByTexture.get(texture)!
+    const bufferSetsNeeded = Math.ceil((cmds.length * 6) / VERTICES_PER_BUFFER_SET)
 
-    let i = 0
-    let bufferSetIdx = 0
+    // if we are missing buffer sets, create them
+    while (texture.buffers.length < bufferSetsNeeded) {
+      const buffers = createBufferSet(gl)
+      if (!buffers) throw new Error('could not create buffer set')
 
-    for (const cmd of cmdsByTexture.get(texture)!) {
-      // append texture coordinates
-      const m = cmd.src
-      const c = [
-        m.y / texture.height, // T
-        m.x / texture.width, // L
-        (m.y + m.h) / texture.height, // B
-        (m.x + m.w) / texture.width, // R
-      ]
-      const coords = [
-        c[3],
-        c[0], // TR
-        c[1],
-        c[0], // TL
-        c[3],
-        c[2], // BR
-        c[1],
-        c[2], // BL
-      ]
-      textureCoordBuf.push(...coords)
-
-      // append position coordinates
-      const p = [
-        cmd.dst.y + cmd.dst.h, // T
-        cmd.dst.x, // L
-        cmd.dst.y, // B
-        cmd.dst.x + cmd.dst.w, // R
-      ]
-      const positions = [
-        p[3],
-        p[0], // TR
-        p[1],
-        p[0], // TL
-        p[3],
-        p[2], // BR
-        p[1],
-        p[2], // BL
-      ]
-      positionBuf.push(...positions)
-
-      // append indices
-      const indices = [i + 0, i + 1, i + 2, i + 3, i + 2, i + 1]
-      indexBuf.push(...indices)
-      i += 4
-
-      // when index limit is hit, switch buffers
-      // NOTE: we're working with a precomputed constant that we always have to hit
-      //       this is a bit bug-prone, so maybe consider storing index buffer length somewhere
-      if (indexBuf.length === VERTICES_PER_BUFFER_SET) {
-        // upload texture coordinates
-        gl.bindBuffer(gl.ARRAY_BUFFER, texture.buffers[bufferSetIdx].textureCoordBuffer)
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(textureCoordBuf), gl.STATIC_DRAW)
-
-        // upload position coordinates
-        gl.bindBuffer(gl.ARRAY_BUFFER, texture.buffers[bufferSetIdx].positionBuffer)
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positionBuf), gl.STATIC_DRAW)
-
-        // upload indices
-        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, texture.buffers[bufferSetIdx].indexBuffer)
-        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indexBuf), gl.STATIC_DRAW)
-
-        // clear
-        textureCoordBuf.splice(0, textureCoordBuf.length)
-        positionBuf.splice(0, positionBuf.length)
-        indexBuf.splice(0, indexBuf.length)
-
-        bufferSetIdx += 1
-
-        // if we miss a buffer, create it last-minute
-        if (bufferSetIdx === texture.buffers.length) {
-          const buffers = createBufferSet(gl)
-          if (!buffers) throw new Error('could not create buffer set')
-
-          texture.buffers.push(buffers)
-        }
-      }
+      texture.buffers.push(buffers)
     }
 
-    // Upload remaining
+    // fill each buffer set
+    for (let bufferSetIdx = 0; bufferSetIdx < bufferSetsNeeded; bufferSetIdx++) {
+      const offset = (bufferSetIdx * VERTICES_PER_BUFFER_SET) / 6
+      const current =
+        bufferSetIdx + 1 === bufferSetsNeeded
+          ? cmds.length % (VERTICES_PER_BUFFER_SET / 6)
+          : VERTICES_PER_BUFFER_SET / 6
 
-    // upload texture coordinates
-    gl.bindBuffer(gl.ARRAY_BUFFER, texture.buffers[bufferSetIdx].textureCoordBuffer)
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(textureCoordBuf), gl.STATIC_DRAW)
+      // const textureCoordBuf: number[] = []
+      // const positionBuf: number[] = []
+      // const indexBuf: number[] = []
+      const textureCoordBuf = new Float32Array(current * 8)
+      const positionBuf = new Float32Array(current * 8)
+      const indexBuf = new Uint16Array(current * 6)
 
-    // upload position coordinates
-    gl.bindBuffer(gl.ARRAY_BUFFER, texture.buffers[bufferSetIdx].positionBuffer)
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positionBuf), gl.STATIC_DRAW)
+      let i = 0
 
-    // upload indices
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, texture.buffers[bufferSetIdx].indexBuffer)
-    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indexBuf), gl.STATIC_DRAW)
+      for (let j = 0; j < current; j++) {
+        const cmd = cmds[offset + j]
+
+        // append texture coordinates
+        const m = cmd.src
+        const c = [
+          m.y / texture.height, // T
+          m.x / texture.width, // L
+          (m.y + m.h) / texture.height, // B
+          (m.x + m.w) / texture.width, // R
+        ]
+        textureCoordBuf[j * 8 + 0] = c[3]
+        textureCoordBuf[j * 8 + 1] = c[0] // TR
+        textureCoordBuf[j * 8 + 2] = c[1]
+        textureCoordBuf[j * 8 + 3] = c[0] // TL
+        textureCoordBuf[j * 8 + 4] = c[3]
+        textureCoordBuf[j * 8 + 5] = c[2] // BR
+        textureCoordBuf[j * 8 + 6] = c[1]
+        textureCoordBuf[j * 8 + 7] = c[2] // BL
+
+        // append position coordinates
+        const p = [
+          cmd.dst.y + cmd.dst.h, // T
+          cmd.dst.x, // L
+          cmd.dst.y, // B
+          cmd.dst.x + cmd.dst.w, // R
+        ]
+        positionBuf[j * 8 + 0] = p[3]
+        positionBuf[j * 8 + 1] = p[0] // TR
+        positionBuf[j * 8 + 2] = p[1]
+        positionBuf[j * 8 + 3] = p[0] // TL
+        positionBuf[j * 8 + 4] = p[3]
+        positionBuf[j * 8 + 5] = p[2] // BR
+        positionBuf[j * 8 + 6] = p[1]
+        positionBuf[j * 8 + 7] = p[2] // BL
+
+        // append indices
+        indexBuf[j * 6 + 0] = i + 0
+        indexBuf[j * 6 + 1] = i + 1
+        indexBuf[j * 6 + 2] = i + 2
+        indexBuf[j * 6 + 3] = i + 3
+        indexBuf[j * 6 + 4] = i + 2
+        indexBuf[j * 6 + 5] = i + 1
+        i += 4
+      }
+
+      const buffers = bufferSetStore[texture.buffers[bufferSetIdx]]
+
+      // upload texture coordinates
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffers.textureCoordBuffer)
+      gl.bufferData(gl.ARRAY_BUFFER, textureCoordBuf, gl.STATIC_DRAW)
+
+      // upload position coordinates
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffers.positionBuffer)
+      gl.bufferData(gl.ARRAY_BUFFER, positionBuf, gl.STATIC_DRAW)
+
+      // upload indices
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffers.indexBuffer)
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indexBuf, gl.STATIC_DRAW)
+    }
   }
 
   clockBufferGen()
@@ -405,7 +419,8 @@ export function draw(
 
     let remainingVertices = texture.instances.length * 6
 
-    texture.buffers.forEach((buffers, idx) => {
+    texture.buffers.forEach((bufferIdx, idx) => {
+      const buffers = bufferSetStore[bufferIdx]
       const isLast = idx + 1 === texture.buffers.length
       const currentVertices = isLast ? remainingVertices : VERTICES_PER_BUFFER_SET
       remainingVertices -= currentVertices
@@ -465,7 +480,7 @@ export function draw(
         gl.activeTexture(gl.TEXTURE0)
 
         // Bind the texture to texture unit 0
-        gl.bindTexture(gl.TEXTURE_2D, texture.texture)
+        gl.bindTexture(gl.TEXTURE_2D, getWebGLTexture(texture))
 
         // Tell the shader we bound the texture to texture unit 0
         gl.uniform1i(programData.uniforms.uSampler, 0)
