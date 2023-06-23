@@ -69,7 +69,7 @@ export class Rectangle {
     return new Rectangle(this.x, this.y, this.w, this.h, this.rot + rot)
   }
 
-  intersects(other: Rectangle): boolean {
+  intersectsRect(other: Rectangle): boolean {
     return (
       this.x < other.x + other.w &&
       this.x + this.w > other.x &&
@@ -78,12 +78,16 @@ export class Rectangle {
     )
   }
 
-  contains(other: Rectangle): boolean {
+  containsRect(other: Rectangle): boolean {
     return (
       this.x <= other.x &&
       this.y <= other.y &&
       this.x + this.w >= other.x + other.w &&
       this.y + this.h >= other.y + other.h
     )
+  }
+
+  containsCoord(p: Point): boolean {
+    return this.x < p.x && this.x + this.w > p.x && this.y < p.y && this.y + this.w > p.y
   }
 }

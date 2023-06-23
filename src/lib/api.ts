@@ -174,24 +174,53 @@ export function getCollections(): Promise<ApiCollection[]> {
   })
 }
 
-export type ApiDistanceFunctionVariant = 'palette'
+export type ApiFilter = {}
+
+export type ApiDistanceFunctionVariant =
+  | { type: 'palette' }
+  | { type: 'date_time' }
+  | { type: 'palette_cos' }
+
+export type ApiCompareFunctionVariant =
+  | { type: 'signed_dist'; dist: ApiDistanceFunctionVariant }
+  | { type: 'comparative_dist'; dist: ApiDistanceFunctionVariant; compared_to: string }
 
 interface LayoutRequestTypeMap {
   grid_expansion: ApiLayoutGrid
+  sort: ApiLayoutSort
+  tsne: ApiLayoutPos
 }
 
-export type ApiLayoutRequest = {
-  type: 'grid_expansion'
-  compared_to: string
-  dist: ApiDistanceFunctionVariant
-}
+export type ApiLayoutRequest = ApiLayoutOptions & { filter?: ApiLayoutFilter }
+
+export type ApiLayoutFilter = { has_metadata?: ('palette' | 'date_time')[]; limit?: number }
+
+export type ApiLayoutOptions =
+  | {
+      type: 'grid_expansion'
+      anchor?: 'top_left' | 'top_right' | 'bottom_left' | 'bottom_right' | 'center'
+      grid_dist?: 'manhattan' | 'pseudo_pythegorean' | 'pythegorean'
+      compare: ApiCompareFunctionVariant
+    }
+  | { type: 'sort'; compare: ApiCompareFunctionVariant }
+  | { type: 'tsne'; dist: ApiDistanceFunctionVariant }
 
 export interface ApiLayoutGrid {
   type: 'grid'
   data: Array<Array<string | null>>
 }
 
-export type ApiLayout = ApiLayoutGrid
+export interface ApiLayoutSort {
+  type: 'sort'
+  data: Array<string>
+}
+
+export interface ApiLayoutPos {
+  type: 'pos'
+  data: Array<[string, number, number]>
+}
+
+export type ApiLayout = ApiLayoutGrid | ApiLayoutSort | ApiLayoutPos
 
 export function getLayout<R extends ApiLayoutRequest>(
   collection_id: string,
@@ -211,7 +240,7 @@ export function getLayout<R extends ApiLayoutRequest>(
       })
       .then(buf => {
         if (!buf) throw new Error('could not get buffer as arrayBuffer')
-        return decode(new Uint8Array(buf)) as ApiLayout
+        return decode(new Uint8Array(buf)) as LayoutRequestTypeMap[R['type']]
       })
       .then(resolve)
       .catch(reject)

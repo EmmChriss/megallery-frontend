@@ -419,10 +419,10 @@ export function draw(
 
     let remainingVertices = texture.instances.length * 6
 
-    texture.buffers.forEach((bufferIdx, idx) => {
+    texture.buffers.forEach(bufferIdx => {
       const buffers = bufferSetStore[bufferIdx]
-      const isLast = idx + 1 === texture.buffers.length
-      const currentVertices = isLast ? remainingVertices : VERTICES_PER_BUFFER_SET
+      const currentVertices =
+        remainingVertices < VERTICES_PER_BUFFER_SET ? remainingVertices : VERTICES_PER_BUFFER_SET
       remainingVertices -= currentVertices
 
       // eslint-disable-next-line

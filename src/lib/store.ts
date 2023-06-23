@@ -29,11 +29,57 @@ const UPLOAD_CANVAS = document.createElement('canvas')
 UPLOAD_CANVAS.style.display = 'none'
 document.getElementById('main')?.appendChild(UPLOAD_CANVAS)
 
-interface CollisionGrid {
-  root: Rectangle
-  cellW: number
-  cellH: number
-  cells: CollisionGridCell[][]
+export class CollisionGrid {
+  constructor(
+    public root: Rectangle,
+    public cellW: number,
+    public cellH: number,
+    public cells: CollisionGridCell[][],
+  ) {}
+
+  getGridCellCoords(p: Point, round: 'up' | 'down'): [number, number] {
+    const x = (p.x - this.root.x) / this.cellW
+    const y = (p.y - this.root.y) / this.cellH
+
+    if (round === 'up') {
+      return [Math.ceil(x), Math.ceil(y)]
+    } else if (round === 'down') {
+      return [Math.floor(x), Math.floor(y)]
+    } else throw Error('')
+  }
+
+  collisionsRect(r: Rectangle): GraphicsDrawCommand[] {
+    let [baseX, baseY] = this.getGridCellCoords(r.getBasePoint(), 'down')!
+    let [offsetX, offsetY] = this.getGridCellCoords(r.getOffsetPoint(), 'up')!
+
+    baseX = Math.max(baseX, 0)
+    baseY = Math.max(baseY, 0)
+
+    offsetX = Math.min(offsetX, this.cells.length - 1)
+    offsetY = Math.min(offsetY, this.cells[0].length - 1)
+
+    const numOfCells = this.cells.length * this.cells[0].length
+    if ((baseX - offsetX + 1) * (baseY - offsetY + 1) > Math.sqrt(numOfCells)) {
+      return []
+    }
+
+    const drawCommands = []
+    for (let i = baseX; i <= offsetX; i++) {
+      for (let j = baseY; j <= offsetY; j++) {
+        drawCommands.push(...this.cells[i][j].intersects)
+      }
+    }
+
+    return drawCommands
+  }
+
+  collisionsCoord(p: Point): GraphicsDrawCommand[] {
+    const [x, y] = this.getGridCellCoords(p, 'down')
+
+    if (x < 0 || y < 0 || x > this.cells.length - 1 || y > this.cells[0].length - 1) return []
+
+    return this.cells[x][y].intersects.filter(gdc => gdc.dst.containsCoord(p))
+  }
 }
 
 interface CollisionGridCell {
@@ -45,6 +91,7 @@ interface TextureStoreEventMap {
   'changed-atlases': () => void
   'changed-graphics-draw-commands': (drawCommands: GraphicsDrawCommand[]) => void
   'changed-visible': (visible: DrawCommand[]) => void
+  'changed-collision-grid': (collisionGrid: CollisionGrid) => void
 }
 
 export class TextureStore extends EventHandler<TextureStoreEventMap> {
@@ -246,7 +293,8 @@ export class TextureStore extends EventHandler<TextureStoreEventMap> {
       }
     }
 
-    this.collisionGrid = { root, cellW, cellH, cells }
+    this.collisionGrid = new CollisionGrid(root, cellW, cellH, cells)
+    this.emitEvent('changed-collision-grid', this.collisionGrid)
   }
 
   protected updateVisible(viewport: Viewport) {
@@ -256,39 +304,7 @@ export class TextureStore extends EventHandler<TextureStoreEventMap> {
       return
     }
 
-    // intersect with collisionGrid
-    const getGridCellCoords = (p: Point, round: 'up' | 'down') => {
-      const x = (p.x - this.collisionGrid!.root.x) / this.collisionGrid!.cellW
-      const y = (p.y - this.collisionGrid!.root.y) / this.collisionGrid!.cellH
-
-      if (round === 'up') {
-        return [Math.ceil(x), Math.ceil(y)]
-      } else if (round === 'down') {
-        return [Math.floor(x), Math.floor(y)]
-      }
-    }
-
-    let [baseX, baseY] = getGridCellCoords(viewport.rect.getBasePoint(), 'down')!
-    let [offsetX, offsetY] = getGridCellCoords(viewport.rect.getOffsetPoint(), 'up')!
-
-    baseX = Math.max(baseX, 0)
-    baseY = Math.max(baseY, 0)
-
-    offsetX = Math.min(offsetX, this.collisionGrid.cells.length - 1)
-    offsetY = Math.min(offsetY, this.collisionGrid.cells[0].length - 1)
-
-    const numOfCells = this.collisionGrid.cells.length * this.collisionGrid.cells[0].length
-    if ((baseX - offsetX + 1) * (baseY - offsetY + 1) > Math.sqrt(numOfCells)) {
-      this.visible = []
-      return
-    }
-
-    const drawCommands = []
-    for (let i = baseX; i <= offsetX; i++) {
-      for (let j = baseY; j <= offsetY; j++) {
-        drawCommands.push(...this.collisionGrid.cells[i][j].intersects)
-      }
-    }
+    const drawCommands = this.collisionGrid.collisionsRect(viewport.rect)
 
     this.visible = drawCommands
 

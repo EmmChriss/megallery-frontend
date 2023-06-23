@@ -1,9 +1,8 @@
 import { App } from './app'
-import { ApiImage, getLayout, ImageMetadata } from './api'
+import { ApiImage, ApiLayoutFilter, ApiLayoutRequest, getLayout, ImageMetadata } from './api'
 import { EventHandler } from './eventHandler'
 import { DrawCommand } from './store'
-import { Rectangle } from './types'
-import { measureTime, measureTimeCallback } from './util'
+import { Point, Rectangle } from './types'
 
 export type ImageWithMetadata = ApiImage & ImageMetadata
 
@@ -185,15 +184,20 @@ export interface OrganizerEventMap {
   'changed-layout': (layout: DrawCommand[]) => void
 }
 
+export type LayoutDescriptor = ApiLayoutRequest | FrontendLayout
+
+const FRONTEND_LAYOUTS = ['grid']
+type FrontendLayout = { type: 'grid' }
+
 export class Organizer extends EventHandler<OrganizerEventMap> {
   app: App
 
   metadata: Map<string, ImageMetadata> = new Map()
-  layout: DrawCommand[] = []
+  images: Map<string, ApiImage> = new Map()
 
-  distanceFunction: DistanceFunction = palette_dist
-  filter: FilterFunction = () => true
-  layoutGenerator: LayoutGenerator<ImageWithMetadata> = m => createSimpleGridLayout(m)
+  layout: DrawCommand[] = []
+  layoutDescriptor: LayoutDescriptor = { type: 'grid' }
+  filter: ApiLayoutFilter = {}
 
   constructor(app: App) {
     super()
@@ -202,42 +206,79 @@ export class Organizer extends EventHandler<OrganizerEventMap> {
 
     app.addEventListener('changed-images', async (imgs, metadata) => {
       this.metadata = metadata
+      this.images = imgs
 
-      const array = [...metadata.values()]
-      const filtered = array.filter(this.filter)
-      const filteredIds = new Set(filtered.map(m => m.id))
-      const composite = filtered.map(m => Object.assign(m, imgs.get(m.id)))
+      this.regenerateLayout()
+    })
+  }
 
-      if (array.length === 0) return
+  public setFilter(filter: ApiLayoutFilter) {
+    this.filter = filter
+    this.regenerateLayout()
+  }
 
-      const compared_to = array.filter(m => m.palette)[0].id
-      getLayout(app.collection!.id, { type: 'grid_expansion', compared_to, dist: 'palette' })
-      this.layoutGenerator = m => createExpansionGridLayout(m, compared_to, this.distanceFunction)
-      // this.layoutGenerator = m => createTSNELayout(m, this.distanceFunction)
+  public setLayout(layout: LayoutDescriptor) {
+    this.layoutDescriptor = layout
+    this.regenerateLayout()
+  }
 
-      const clock = measureTimeCallback('fetching layout from backend', 1)
-      const layout = await getLayout(app.collection!.id, {
-        type: 'grid_expansion',
-        compared_to,
-        dist: 'palette',
-      }).then(resp => {
-        // construct extended grid that we can use
-        const grid = resp.data.map(row =>
-          row.map(id =>
-            id === null ? undefined : Object.assign({}, imgs.get(id), metadata.get(id)),
+  async regenerateLayout() {
+    console.log(this.layoutDescriptor)
+
+    if (FRONTEND_LAYOUTS.includes(this.layoutDescriptor.type)) {
+      if (this.layoutDescriptor.type === 'grid') {
+        this.layout = createSimpleGridLayout([...this.images.values()])
+      }
+    } else {
+      const req = Object.assign({}, this.layoutDescriptor as ApiLayoutRequest, {
+        filter: this.filter,
+      })
+      console.log(req)
+
+      const resp = await getLayout(this.app.collection!.id, req)
+
+      if (resp.type === 'sort') {
+        this.layout = createLineLayout(resp.data.map(id => this.images.get(id)!))
+      } else if (resp.type === 'grid') {
+        this.layout = createGridLayout(
+          resp.data.map(row =>
+            row.map(id =>
+              id === null
+                ? undefined
+                : Object.assign({}, this.images.get(id), this.metadata.get(id)),
+            ),
           ),
         )
+      } else if (resp.type === 'pos') {
+        const scaled = resp.data.map(
+          ([id, x, y]) => [id, x * 100_000, y * 100_000] as [string, number, number],
+        )
 
-        // construct layout from grid
-        return createGridLayout(grid)
-      })
-      clock()
+        const data = scaled.map(([id, xi, yi], i) => {
+          let s = Infinity
 
-      measureTime('calculating layout', 1, () => (this.layout = this.layoutGenerator(composite)))
-      this.layout = layout
+          for (let j = 0; j < scaled.length; j++) {
+            if (i === j) continue
 
-      this.emitEvent('changed-layout', this.layout)
-    })
+            const [_, xj, yj] = scaled[j]
+
+            s = Math.max(10, Math.min(s, Math.abs(xi - xj)))
+            s = Math.max(10, Math.min(s, Math.abs(yi - yj)))
+          }
+
+          s = Math.max(s, 10) * 4
+          s = Math.max(s, 10) * 4
+
+          return [id, xi, yi, s] as [string, number, number, number]
+        })
+
+        this.layout = data.map(([id, x, y, s]) =>
+          Object.assign({ id, dst: Rectangle.fromCenter(new Point(x, y), s, s) }),
+        )
+      }
+    }
+
+    this.emitEvent('changed-layout', this.layout)
   }
 }
 

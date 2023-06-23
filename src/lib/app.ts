@@ -3,6 +3,7 @@ import { EventHandler } from './eventHandler'
 import { draw as drawGL, initProgram, Texture, updateBuffers } from './gl'
 import { GLContext } from './graphics'
 import { Organizer } from './layout'
+import { Selector } from './selector'
 import { TextureStore } from './store'
 import { Viewport } from './viewport'
 import { createWorker } from './worker'
@@ -19,6 +20,7 @@ export class App extends EventHandler<AppEventMap> {
 
   textureStore: TextureStore
   organizer: Organizer
+  selector: Selector
 
   collection?: ApiCollection
   images: Map<string, ApiImage> = new Map()
@@ -41,15 +43,17 @@ export class App extends EventHandler<AppEventMap> {
 
     this.glContext = glContext
 
-    this.viewport = new Viewport(canvas)
-
     this.organizer = new Organizer(this)
+
+    this.viewport = new Viewport(this)
 
     this.textureStore = new TextureStore(this, this.glContext)
     this.textureStore.addEventListener(
       'changed-graphics-draw-commands',
       gdc => (this.drawCalls = updateBuffers(this.glContext!.gl, gdc)),
     )
+
+    this.selector = new Selector(this)
 
     this.addEventListener('changed-collection', collection => {
       this.drawing = collection !== undefined

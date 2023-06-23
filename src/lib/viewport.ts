@@ -1,3 +1,5 @@
+import { Z_VERSION_ERROR } from 'zlib'
+import { App } from './app'
 import { EventHandler } from './eventHandler'
 import { Point, Rectangle } from './types'
 
@@ -7,33 +9,75 @@ const ZOOM_BASE = 2
 interface ViewportEventMap {
   resize: () => void
   move: (viewport: Viewport) => void
+  click: (p: Point) => void
 }
 
 export class Viewport extends EventHandler<ViewportEventMap> {
+  app: App
   canvas: HTMLCanvasElement
   rect: Rectangle
 
   timer: { now: number }
   keysHeld: Set<string>
 
-  constructor(canvas: HTMLCanvasElement) {
+  dragging = false
+
+  constructor(app: App) {
     super()
 
-    this.canvas = canvas
+    this.app = app
+
+    this.canvas = app.canvas
     this.canvas.width = window.innerWidth
     this.canvas.height = window.innerHeight
-    this.rect = new Rectangle(0, 0, canvas.width, canvas.height)
+    this.rect = new Rectangle(0, 0, app.canvas.width, app.canvas.height)
 
     this.timer = { now: performance.now() }
 
     // keyboard movement
     this.keysHeld = new Set<string>()
 
-    this.initKeyboardMovement()
+    this.initMovement()
     this.initRescaleOnResize()
+
+    this.app.organizer.addEventListener('changed-layout', async layout => {
+      if (layout.length === 0) return
+
+      const [minX, minY, maxX, maxY] = layout.reduce(
+        ([minX, minY, maxX, maxY], dc) => [
+          Math.min(minX, dc.dst.x),
+          Math.min(minY, dc.dst.y),
+          Math.max(maxX, dc.dst.x + dc.dst.w),
+          Math.max(maxY, dc.dst.y + dc.dst.h),
+        ],
+        [Infinity, Infinity, -Infinity, -Infinity],
+      )
+
+      // calculate smallest rectangle that fits images
+      // also, don't override wh ratio
+      const contain = new Rectangle(minX, minY, maxX - minX, maxY - minY)
+      const wh = this.rect.w / this.rect.h
+
+      let w = contain.w
+      let h = contain.h
+
+      if (wh > 1) {
+        h /= wh
+      } else {
+        w *= wh
+      }
+
+      const rect = Rectangle.fromCenter(contain.getCenter(), w, h)
+
+      // crude compare-and-swap algorithm to make sure we aren't caught up in the move-loop
+      while (this.rect !== rect) {
+        this.rect = rect
+        await new Promise(resolve => setTimeout(resolve, 2))
+      }
+    })
   }
 
-  protected initKeyboardMovement() {
+  protected initMovement() {
     const onKeyDown = (ev: KeyboardEvent) => {
       this.keysHeld.add(ev.key)
     }
@@ -44,6 +88,15 @@ export class Viewport extends EventHandler<ViewportEventMap> {
 
     window.addEventListener('keydown', onKeyDown)
     window.addEventListener('keyup', onKeyUp)
+
+    const onClick = (evt: MouseEvent) => {
+      // remember to translate from topleft to bottomleft coordinate system
+      const screenPoint = new Point(evt.clientX, this.canvas.height - evt.clientY)
+      const viewportPoint = this.screenToViewportCoord(screenPoint)
+      this.emitEvent('click', viewportPoint)
+    }
+
+    this.canvas.addEventListener('click', onClick)
   }
 
   public move() {
