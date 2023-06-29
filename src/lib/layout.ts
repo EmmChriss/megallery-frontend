@@ -55,6 +55,7 @@ export interface GridLayoutParams {
   width?: number
   height?: number
   spacing?: number
+  invert?: boolean
 }
 
 export function createSimpleGridLayout(
@@ -116,6 +117,7 @@ export function createGridLayout(
   const width = params?.width || 100
   const height = params?.height || 100
   const spacing = params?.spacing || 10
+  const invert = params?.invert || false
 
   return metadata
     .map((row, i) =>
@@ -133,7 +135,9 @@ export function createGridLayout(
           w *= wh
         }
 
-        const dst = new Rectangle((width + spacing) * j, (height + spacing) * i, w, h)
+        let dst
+        if (invert) dst = new Rectangle((width + spacing) * i, (height + spacing) * j, w, h)
+        else dst = new Rectangle((width + spacing) * j, (height + spacing) * i, w, h)
 
         return { dst, id: e.id }
       }),
@@ -236,6 +240,7 @@ export class Organizer extends EventHandler<OrganizerEventMap> {
       console.log(req)
 
       const resp = await getLayout(this.app.collection!.id, req)
+      console.log(resp)
 
       if (resp.type === 'sort') {
         this.layout = createLineLayout(resp.data.map(id => this.images.get(id)!))
@@ -248,6 +253,7 @@ export class Organizer extends EventHandler<OrganizerEventMap> {
                 : Object.assign({}, this.images.get(id), this.metadata.get(id)),
             ),
           ),
+          { invert: resp.invert },
         )
       } else if (resp.type === 'pos') {
         const scaled = resp.data.map(

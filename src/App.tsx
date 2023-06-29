@@ -1,19 +1,32 @@
 import Accordion from '@mui/material/Accordion'
 import AccordionDetails from '@mui/material/AccordionDetails'
 import AccordionSummary from '@mui/material/AccordionSummary'
+import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
+import Card from '@mui/material/Card'
 import Checkbox from '@mui/material/Checkbox'
 import Container from '@mui/material/Container'
 import FormControl from '@mui/material/FormControl'
 import InputLabel from '@mui/material/InputLabel'
 import ListItemText from '@mui/material/ListItemText'
 import MenuItem from '@mui/material/MenuItem'
+import Modal from '@mui/material/Modal'
 import OutlinedInput from '@mui/material/OutlinedInput'
 import Select from '@mui/material/Select'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
+import Typography from '@mui/material/Typography'
 import React, { useEffect, useRef, useState } from 'react'
-import { ApiCompareFunctionVariant, ApiDistanceFunctionVariant, ApiLayoutFilter } from './lib/api'
+import {
+  ApiCollection,
+  ApiCompareFunctionVariant,
+  ApiDistanceFunctionVariant,
+  ApiLayoutFilter,
+  createCollection,
+  finalizeCollection,
+  getCollections,
+  uploadFile,
+} from './lib/api'
 import { App as LibApp } from './lib/app'
 import { GraphicsDrawCommand } from './lib/graphics'
 import { LayoutDescriptor } from './lib/layout'
@@ -27,6 +40,31 @@ const App = () => {
 
     appRef.current = new LibApp(canvasRef.current)
   }, [canvasRef.current])
+
+  const [collections, setCollections] = useState<ApiCollection[]>()
+  const [currentCollection, setCurrentCollection] = useState<ApiCollection>()
+
+  useEffect(() => {
+    if (currentCollection === undefined) {
+      appRef.current?.closeCollection()
+    } else {
+      appRef.current?.openCollection(currentCollection)
+    }
+  }, [currentCollection])
+
+  useEffect(() => {
+    if (appRef.current) {
+      appRef.current.addEventListener('changed-collection', collection => {
+        setCurrentCollection(collection)
+      })
+    }
+  }, [appRef.current])
+
+  const fetchCollections = async () => {
+    setCollections(await getCollections())
+  }
+
+  useEffect(() => void fetchCollections(), [])
 
   type AccordionPanels = 'filter' | 'layout' | 'select'
   const [openAccordion, setOpenAcoordion] = useState<AccordionPanels>()
@@ -53,6 +91,8 @@ const App = () => {
       setLayout({ type: 'sort', compare: { type: 'signed_dist', dist: { type: 'palette' } } })
     } else if (type === 'tsne') {
       setLayout({ type: 'tsne', dist: { type: 'palette' } })
+    } else if (type === 'time_hist') {
+      setLayout({ type: 'time_hist', resolution: 'month' })
     }
   }
 
@@ -186,6 +226,33 @@ const App = () => {
           </FormControl>
         </>
       )
+    } else if (layout.type === 'time_hist') {
+      return (
+        <>
+          {/* Grid Distance */}
+          <FormControl>
+            <InputLabel id="label-hist-resolution">Hist Resolution</InputLabel>
+            <Select
+              labelId="label-hist-resolution"
+              label="Hist Resolution"
+              onChange={evt =>
+                setLayout(
+                  Object.assign({}, layout, {
+                    resolution: evt.target.value,
+                  }),
+                )
+              }
+              value={layout.resolution}
+            >
+              <MenuItem value={'hour'}>Hour</MenuItem>
+              <MenuItem value={'day'}>Day</MenuItem>
+              <MenuItem value={'week'}>Week</MenuItem>
+              <MenuItem value={'month'}>Month</MenuItem>
+              <MenuItem value={'year'}>Year</MenuItem>
+            </Select>
+          </FormControl>
+        </>
+      )
     } else if (layout.type === 'tsne') {
       return (
         <>
@@ -205,16 +272,8 @@ const App = () => {
     }
   }
 
-  return (
+  const controls = (
     <>
-      {/* Main canvas */}
-      <canvas
-        ref={canvasRef}
-        width={window.innerWidth}
-        height={window.innerHeight}
-        style={{ maxWidth: '100vw', maxHeight: '100vh' }}
-      />
-
       {/* Controls */}
       <Container style={{ position: 'absolute', top: '1em', left: '1em', width: 'fit-content' }}>
         <Accordion expanded={openAccordion === 'filter'} onChange={handleOpenAccordion('filter')}>
@@ -288,6 +347,7 @@ const App = () => {
                 >
                   <MenuItem value={'grid'}>Grid</MenuItem>
                   <MenuItem value={'grid_expansion'}>Grid Expansion</MenuItem>
+                  <MenuItem value={'time_hist'}>Time Hist</MenuItem>
                   <MenuItem value={'tsne'}>Tsne</MenuItem>
                 </Select>
               </FormControl>
@@ -301,9 +361,119 @@ const App = () => {
         </Accordion>
         <Accordion expanded={openAccordion === 'select'} onChange={handleOpenAccordion('select')}>
           <AccordionSummary>Select</AccordionSummary>
-          <AccordionDetails>SELECT BUTTONS</AccordionDetails>
+          <AccordionDetails>{selected?.id ?? 'None'}</AccordionDetails>
         </Accordion>
       </Container>
+    </>
+  )
+
+  const [collectionName, setCollectionName] = useState('')
+
+  const collectionSelector = (
+    <>
+      <Modal open={true}>
+        <Container>
+          <Box
+            style={{
+              height: '100vh',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'center',
+            }}
+          >
+            <Card style={{ padding: '8px' }}>
+              <Typography mt={2} variant="h2" align="center">
+                Collections
+              </Typography>
+              <Stack direction="column" spacing={1}>
+                <Card>
+                  <Stack
+                    direction="row"
+                    style={{ alignItems: 'center', justifyContent: 'space-between' }}
+                  >
+                    <Stack direction="row" spacing={4} style={{ alignItems: 'center' }}>
+                      <Typography>Create collection</Typography>
+                      <TextField
+                        value={collectionName}
+                        onChange={evt => setCollectionName(evt.target.value)}
+                        label="Name"
+                      />
+                    </Stack>
+                    <Box>
+                      <Button
+                        onClick={() =>
+                          createCollection({ name: collectionName }).then(() => fetchCollections())
+                        }
+                      >
+                        Create
+                      </Button>
+                    </Box>
+                  </Stack>
+                </Card>
+                {collections === undefined ? (
+                  <></>
+                ) : (
+                  collections.map(collection => (
+                    <Card key={collection.id}>
+                      <Stack
+                        direction="row"
+                        style={{ alignItems: 'center', justifyContent: 'space-between' }}
+                      >
+                        <Box>
+                          <Typography>{collection.name}</Typography>
+                        </Box>
+                        <Box>
+                          <Button component="label">
+                            Upload
+                            <input
+                              accept="image/*"
+                              type="file"
+                              onChange={evt => {
+                                Promise.all(
+                                  [...(evt.target.files ?? [])].map(file =>
+                                    uploadFile(collection.id, file),
+                                  ),
+                                ).then(fetchCollections)
+                              }}
+                              hidden
+                              multiple
+                            />
+                          </Button>
+                          {collection.finalized ? (
+                            <Button onClick={() => setCurrentCollection(collection)}>Open</Button>
+                          ) : (
+                            <Button
+                              onClick={() =>
+                                finalizeCollection(collection.id).then(fetchCollections)
+                              }
+                            >
+                              Finalize
+                            </Button>
+                          )}
+                        </Box>
+                      </Stack>
+                    </Card>
+                  ))
+                )}
+              </Stack>
+            </Card>
+          </Box>
+        </Container>
+      </Modal>
+    </>
+  )
+
+  return (
+    <>
+      {/* Main canvas */}
+      <canvas
+        ref={canvasRef}
+        width={window.innerWidth}
+        height={window.innerHeight}
+        style={{ maxWidth: '100vw', maxHeight: '100vh' }}
+      />
+
+      {currentCollection === undefined ? collectionSelector : controls}
     </>
   )
 }

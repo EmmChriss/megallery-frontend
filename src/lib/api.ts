@@ -157,6 +157,7 @@ export function getBulkImages(
 export interface ApiCollection {
   id: string
   name: string
+  finalized: boolean
 }
 
 export function getCollections(): Promise<ApiCollection[]> {
@@ -174,6 +175,60 @@ export function getCollections(): Promise<ApiCollection[]> {
   })
 }
 
+export function createCollection(req: { name: string }): Promise<void> {
+  const request = new Request(`${BASE_URL}/collections`, {
+    method: 'POST',
+    body: JSON.stringify(req),
+    headers: [['content-type', 'application/json']],
+  })
+
+  return new Promise((resolve, reject) => {
+    fetch(request)
+      .then(resp => {
+        if (!resp.ok) resp.text().then(reject).catch(reject)
+        else return
+      })
+      .then(resolve)
+      .catch(reject)
+  })
+}
+
+export function finalizeCollection(id: string): Promise<void> {
+  const request = new Request(`${BASE_URL}/${id}/finalize`, {
+    method: 'POST',
+  })
+
+  return new Promise((resolve, reject) => {
+    fetch(request)
+      .then(resp => {
+        if (!resp.ok) resp.text().then(reject).catch(reject)
+        else return
+      })
+      .then(resolve)
+      .catch(reject)
+  })
+}
+
+export function uploadFile(id: string, file: File): Promise<void> {
+  const body = new FormData()
+  body.append('image', file, file.name)
+
+  const request = new Request(`${BASE_URL}/${id}/upload`, {
+    method: 'POST',
+    body,
+  })
+
+  return new Promise((resolve, reject) => {
+    fetch(request)
+      .then(resp => {
+        if (!resp.ok) resp.text().then(reject).catch(reject)
+        else return
+      })
+      .then(resolve)
+      .catch(reject)
+  })
+}
+
 export type ApiFilter = {}
 
 export type ApiDistanceFunctionVariant =
@@ -187,6 +242,7 @@ export type ApiCompareFunctionVariant =
 
 interface LayoutRequestTypeMap {
   grid_expansion: ApiLayoutGrid
+  time_hist: ApiLayoutGrid
   sort: ApiLayoutSort
   tsne: ApiLayoutPos
 }
@@ -202,11 +258,16 @@ export type ApiLayoutOptions =
       grid_dist?: 'manhattan' | 'pseudo_pythegorean' | 'pythegorean'
       compare: ApiCompareFunctionVariant
     }
+  | {
+      type: 'time_hist'
+      resolution: 'hour' | 'day' | 'week' | 'month' | 'year'
+    }
   | { type: 'sort'; compare: ApiCompareFunctionVariant }
   | { type: 'tsne'; dist: ApiDistanceFunctionVariant }
 
 export interface ApiLayoutGrid {
   type: 'grid'
+  invert: boolean
   data: Array<Array<string | null>>
 }
 

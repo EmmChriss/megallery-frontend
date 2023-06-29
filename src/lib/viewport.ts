@@ -56,15 +56,15 @@ export class Viewport extends EventHandler<ViewportEventMap> {
       // calculate smallest rectangle that fits images
       // also, don't override wh ratio
       const contain = new Rectangle(minX, minY, maxX - minX, maxY - minY)
-      const wh = this.rect.w / this.rect.h
 
-      let w = contain.w
-      let h = contain.h
-
-      if (wh > 1) {
-        h /= wh
+      let w
+      let h
+      if (this.rect.w > this.rect.h) {
+        w = contain.w
+        h = (this.rect.h / this.rect.w) * w
       } else {
-        w *= wh
+        h = contain.h
+        w = (this.rect.w / this.rect.h) * h
       }
 
       const rect = Rectangle.fromCenter(contain.getCenter(), w, h)

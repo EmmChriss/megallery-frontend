@@ -59,8 +59,6 @@ export class App extends EventHandler<AppEventMap> {
       this.drawing = collection !== undefined
     })
 
-    this.openCollection({ name: '', id: '52edbd3b-0f3f-468f-a90d-eafab093281e' })
-
     // kickstart frame-draw loop
     this.draw()
   }
